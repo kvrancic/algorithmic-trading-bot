@@ -37,6 +37,8 @@ lxml>=4.9.0  # XML/HTML parsing
 cloudscraper>=1.2.71  # Cloudflare bypass
 schedule>=1.2.0  # Task scheduling
 python-telegram-bot>=20.0  # Alerts
+feedparser>=6.0.10  # RSS feed parsing
+selenium>=4.15.0  # Web scraping for Cloudflare bypass
 
 # FastAPI for dashboard/API (optional)
 fastapi>=0.104.0

@@ -21,7 +21,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Add src to path so we can import our models
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import numpy as np
 import pandas as pd
