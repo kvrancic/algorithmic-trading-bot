@@ -95,6 +95,16 @@ class ClassificationModel(BaseModel):
         logger.info("Class distribution before balancing",
                    classes=dict(zip(unique, counts)))
         
+        # Handle high-dimensional data (like images) by flattening
+        original_shape = X.shape
+        needs_reshape = len(X.shape) > 2
+        
+        if needs_reshape:
+            # Flatten to 2D for SMOTE
+            X_flat = X.reshape(X.shape[0], -1)
+        else:
+            X_flat = X
+        
         # Choose balancing strategy based on imbalance ratio
         min_samples = counts.min()
         max_samples = counts.max()
@@ -110,7 +120,13 @@ class ClassificationModel(BaseModel):
             # Mild imbalance - use undersampling
             sampler = RandomUnderSampler(random_state=42)
         
-        X_balanced, y_balanced = sampler.fit_resample(X, y)
+        X_balanced, y_balanced = sampler.fit_resample(X_flat, y)
+        
+        # Reshape back to original dimensions if needed
+        if needs_reshape:
+            # Calculate new shape maintaining original dimensions except for number of samples
+            new_shape = (X_balanced.shape[0],) + original_shape[1:]
+            X_balanced = X_balanced.reshape(new_shape)
         
         unique, counts = np.unique(y_balanced, return_counts=True)
         logger.info("Class distribution after balancing",
@@ -211,7 +227,7 @@ class ClassificationModel(BaseModel):
                 y = labels
             
             # Encode string labels
-            if y.dtype == np.object:
+            if y.dtype == object:
                 y = self.encode_labels(y, fit=is_training)
         
         # Feature selection

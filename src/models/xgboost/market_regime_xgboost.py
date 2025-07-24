@@ -366,9 +366,19 @@ class MarketRegimeXGBoost(ClassificationModel):
         # Drop rows with NaN values
         all_features = all_features.dropna()
         
-        # Store feature names
+        # Store feature names and ensure consistency
         if is_training:
             self.feature_names = all_features.columns.tolist()
+        else:
+            # For inference, ensure we have the same features as training
+            if hasattr(self, 'feature_names') and self.feature_names:
+                # Add missing columns with zeros
+                for feature in self.feature_names:
+                    if feature not in all_features.columns:
+                        all_features[feature] = 0.0
+                
+                # Reorder columns to match training order
+                all_features = all_features[self.feature_names]
         
         # Convert to numpy
         X = all_features.values
@@ -384,7 +394,7 @@ class MarketRegimeXGBoost(ClassificationModel):
                 y = labels[-len(all_features):]
             
             # Encode labels if string
-            if hasattr(y, 'dtype') and y.dtype == np.object:
+            if hasattr(y, 'dtype') and y.dtype == object:
                 y = self.encode_labels(y, fit=is_training)
         elif is_training:
             # Auto-generate labels based on regime classification rules
@@ -490,12 +500,17 @@ class MarketRegimeXGBoost(ClassificationModel):
                    n_samples=len(X_train),
                    n_features=X_train.shape[1])
         
-        self.model.fit(
-            X_train, y_train,
-            eval_set=eval_set,
-            early_stopping_rounds=self.config.early_stopping_rounds,
-            verbose=False
-        )
+        # Fit with or without early stopping based on XGBoost version
+        try:
+            self.model.fit(
+                X_train, y_train,
+                eval_set=eval_set,
+                early_stopping_rounds=self.config.early_stopping_rounds,
+                verbose=False
+            )
+        except TypeError:
+            # Fallback for newer XGBoost versions
+            self.model.fit(X_train, y_train)
         
         # Get feature importance
         if self.config.track_feature_importance:
@@ -515,16 +530,28 @@ class MarketRegimeXGBoost(ClassificationModel):
                        features=[f"{name}: {imp:.4f}" for name, imp in top_features])
         
         # Get training history
-        history = {
-            'best_iteration': self.model.best_iteration,
-            'best_score': self.model.best_score
-        }
+        history = {}
+        
+        # Only access best_iteration if early stopping was used
+        try:
+            history['best_iteration'] = self.model.best_iteration
+            history['best_score'] = self.model.best_score
+        except AttributeError:
+            # Early stopping not used
+            history['best_iteration'] = self.model.n_estimators
+            history['best_score'] = None
         
         # Evaluate on validation set
         val_predictions = self.model.predict(X_val)
+        
+        # Get actual unique classes in validation set
+        unique_classes = np.unique(np.concatenate([y_val, val_predictions]))
+        actual_class_names = [self.config.regime_classes[i] for i in unique_classes if i < len(self.config.regime_classes)]
+        
         val_report = classification_report(
             y_val, val_predictions,
-            target_names=self.config.regime_classes,
+            target_names=actual_class_names,
+            labels=unique_classes,
             output_dict=True
         )
         

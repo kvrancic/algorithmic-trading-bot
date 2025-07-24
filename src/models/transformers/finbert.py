@@ -246,7 +246,7 @@ class FinBERT(ClassificationModel):
                 y = labels
             
             # Encode labels if string
-            if y.dtype == np.object:
+            if y.dtype == object:
                 y = self.encode_labels(y, fit=is_training)
         
         # Create dataset

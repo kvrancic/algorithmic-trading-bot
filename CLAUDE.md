@@ -20,8 +20,9 @@
 - Type hints everywhere, comprehensive logging
 
 ## Key Reminders
-- **Always** update TODO.md as you implement features  
+- **Always** update TODO.md as you implement features and note changes in NOTES.md 
 - **Always** reference README.md for complete requirements
+- **Always** download packages with source .venv/bin/activate
 - Start with direct APIs, add LLM layer later, then MCP
 - Paper trading must work perfectly before live trading
 - Risk management is more important than returns

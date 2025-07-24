@@ -188,8 +188,7 @@ class ChartPatternCNN(ClassificationModel):
             self.optimizer,
             mode='min',
             factor=0.5,
-            patience=self.config.early_stopping_patience // 2,
-            verbose=True
+            patience=self.config.early_stopping_patience // 2
         )
         
         # Log model architecture
@@ -484,7 +483,7 @@ class ChartPatternCNN(ClassificationModel):
         if labels is not None:
             y = np.array(pattern_labels)
             # Encode labels if string
-            if y.dtype == np.object:
+            if y.dtype == object:
                 y = self.encode_labels(y, fit=is_training)
         
         return X, y
@@ -524,11 +523,17 @@ class ChartPatternCNN(ClassificationModel):
         if self.config.balance_classes:
             X_train, y_train = self.balance_dataset(X_train, y_train)
         
+        # Ensure labels are encoded as integers
+        if y_train.dtype == object or y_train.dtype.kind in ['U', 'S']:
+            y_train = self.encode_labels(y_train, fit=True)
+        if y_val.dtype == object or y_val.dtype.kind in ['U', 'S']:
+            y_val = self.encode_labels(y_val, fit=False)
+        
         # Convert to tensors
         X_train_tensor = torch.FloatTensor(X_train).to(self.device)
-        y_train_tensor = torch.LongTensor(y_train).to(self.device)
+        y_train_tensor = torch.LongTensor(y_train.astype(int)).to(self.device)
         X_val_tensor = torch.FloatTensor(X_val).to(self.device)
-        y_val_tensor = torch.LongTensor(y_val).to(self.device)
+        y_val_tensor = torch.LongTensor(y_val.astype(int)).to(self.device)
         
         # Create data loaders
         train_dataset = TensorDataset(X_train_tensor, y_train_tensor)

@@ -31,7 +31,7 @@ class ModelType(Enum):
 @dataclass
 class ModelConfig:
     """Base configuration for all models"""
-    name: str
+    name: str = ""
     version: str = "1.0.0"
     model_type: ModelType = ModelType.PRICE_PREDICTION
     
@@ -51,6 +51,7 @@ class ModelConfig:
     # Hardware settings
     device: str = "cpu"  # "cpu" or "cuda"
     num_workers: int = 4
+    random_seed: int = 42
     
     # Persistence
     save_path: Path = Path("models/saved")
@@ -64,6 +65,15 @@ class ModelConfig:
     dropout_rate: float = 0.2
     l1_regularization: float = 0.0
     l2_regularization: float = 0.01
+    
+    def __post_init__(self):
+        """Initialize after dataclass creation"""
+        if not self.name:  # Set default name if not provided
+            self.name = "BaseModel"
+        if not self.output_features:
+            self.output_features = ["prediction"]
+        self.save_path = Path(self.save_path)
+        self.save_path.mkdir(parents=True, exist_ok=True)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary"""

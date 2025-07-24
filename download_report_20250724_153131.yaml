@@ -1,0 +1,36 @@
+cleaning_stats:
+  gaps_filled: 0
+  outliers_handled: 0
+  records_removed: 0
+  total_cleanings: 1
+  values_imputed: 0
+errors: []
+pipeline_stats:
+  cache_hit_rate: 0.0
+  cache_hits: 0
+  cache_misses: 0
+  cached_features: 0
+  feature_generators:
+  - technical
+  - sentiment
+  processing_times: []
+  total_features_generated: 0
+  validation_failures: 0
+summary:
+  failed_downloads: 0
+  features_generated: 0
+  records_per_second: 21.716409748377885
+  success_rate: 1.0
+  successful_downloads: 1
+  total_processing_time: 5.07 seconds
+  total_records: 110
+  total_symbols: 1
+  validation_failures: 0
+validation_stats:
+  by_data_type:
+    market_data: 1
+  common_issues: {}
+  failed_validations: 0
+  success_rate: 1.0
+  successful_validations: 1
+  total_validations: 1
