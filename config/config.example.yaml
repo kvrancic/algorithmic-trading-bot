@@ -1,0 +1,242 @@
+# QuantumSentiment Trading Bot Configuration
+# Copy to config.yaml and customize for your setup
+
+# === SYSTEM CONFIGURATION ===
+system:
+  name: "QuantumSentiment"
+  version: "1.0.0"
+  environment: "development"  # development, staging, production
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  timezone: "UTC"
+
+# === TRADING CONFIGURATION ===
+trading:
+  mode: "paper"  # paper, live - MUST be explicit for live trading
+  initial_capital: 1000.0  # EUR
+  base_currency: "EUR"
+  
+  # Position Limits (Safety First!)
+  max_position_size: 50.0  # EUR per position
+  max_daily_loss: 100.0   # EUR daily loss limit
+  max_portfolio_risk: 0.50  # 50% max invested
+  max_drawdown: 0.20       # 20% max drawdown
+  
+  # Execution Settings
+  execution_delay: 1.0     # seconds between orders
+  slippage_tolerance: 0.002 # 0.2% max slippage
+  commission_rate: 0.001   # 0.1% commission estimate
+
+# === BROKER CONFIGURATION ===
+broker:
+  name: "alpaca"
+  paper_url: "https://paper-api.alpaca.markets"
+  live_url: "https://api.alpaca.markets"  # Only used if trading.mode = "live"
+  timeout: 30  # seconds
+
+# === DATA SOURCES ===
+data_sources:
+  alpaca:
+    enabled: true
+    rate_limit: 200  # requests per minute
+    
+  reddit:
+    enabled: true
+    subreddits: ["wallstreetbets", "stocks", "cryptocurrency", "investing"]
+    rate_limit: 60   # requests per minute
+    min_score: 10    # minimum post score
+    lookback_hours: 24
+    
+  twitter:
+    enabled: false   # Set to true if you have API access
+    rate_limit: 300  # requests per 15 minutes
+    accounts: ["whale_alert", "jimcramer", "zerohedge"]
+    
+  alpha_vantage:
+    enabled: true
+    rate_limit: 5    # requests per minute (free tier)
+    
+  unusual_whales:
+    enabled: true
+    scrape_delay: 900  # 15 minutes between scrapes
+    rate_limit: 1      # requests per minute
+
+# === MACHINE LEARNING ===
+ml:
+  models:
+    price_lstm:
+      enabled: true
+      sequence_length: 48    # hours
+      forecast_horizon: 24   # hours
+      hidden_size: 128
+      num_layers: 3
+      dropout: 0.2
+      
+    pattern_cnn:
+      enabled: true
+      image_size: [64, 64]
+      patterns: ["head_shoulders", "triangle", "flag", "wedge"]
+      confidence_threshold: 0.8
+      
+    regime_xgboost:
+      enabled: true
+      regimes: ["trending", "ranging", "volatile"]
+      n_estimators: 100
+      max_depth: 6
+      
+    sentiment_bert:
+      enabled: true
+      model_name: "ProsusAI/finbert"
+      max_length: 512
+      batch_size: 16
+      
+  ensemble:
+    voting: "weighted"     # weighted, majority
+    meta_learner: "lightgbm"
+    rebalance_frequency: "daily"
+    min_confidence: 0.65   # minimum confidence to trade
+
+# === FEATURE ENGINEERING ===
+features:
+  technical:
+    timeframes: ["1h", "4h", "1d"]
+    indicators:
+      - "sma_20"
+      - "ema_12"
+      - "ema_26"
+      - "rsi_14"
+      - "macd"
+      - "bollinger_bands"
+      - "atr_14"
+      - "volume_sma_20"
+      
+  sentiment:
+    sources: ["reddit", "twitter", "news", "unusual_whales"]
+    aggregation: "weighted_average"
+    decay_factor: 0.95  # older sentiment decays
+    
+  fundamental:
+    metrics: ["pe_ratio", "market_cap", "volume", "beta"]
+    update_frequency: "daily"
+
+# === RISK MANAGEMENT ===
+risk:
+  var:
+    confidence: 0.95
+    horizon_days: 1
+    lookback_days: 252
+    
+  kelly:
+    fraction: 0.25        # conservative 1/4 Kelly
+    max_allocation: 0.10  # 10% max per position
+    
+  stop_loss:
+    type: "adaptive"      # fixed, adaptive
+    atr_multiplier: 2.0
+    max_loss: 0.05        # 5% max loss per position
+    
+  correlation:
+    max_correlation: 0.7  # max correlation between positions
+    rebalance_threshold: 0.8
+
+# === PORTFOLIO OPTIMIZATION ===
+portfolio:
+  optimizer: "black_litterman"  # markowitz, black_litterman, risk_parity
+  rebalance_frequency: "daily"  # hourly, daily, weekly
+  target_volatility: 0.15       # 15% annual volatility
+  
+  constraints:
+    max_weight: 0.20       # 20% max position size
+    min_weight: 0.01       # 1% minimum position
+    turnover_limit: 0.5    # max 50% daily turnover
+
+# === SYMBOLS & UNIVERSE ===
+universe:
+  stocks: ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "SPY", "QQQ"]
+  crypto: ["BTC-USD", "ETH-USD", "BNB-USD", "ADA-USD", "SOL-USD"]
+  forex: ["EUR/USD", "GBP/USD", "USD/JPY"]
+  
+  filters:
+    min_market_cap: 1e9    # $1B minimum
+    min_volume: 1e6        # $1M daily volume
+    max_spread: 0.01       # 1% max bid-ask spread
+
+# === SCHEDULING ===
+scheduler:
+  market_data_update: "*/1 * * * *"      # every minute
+  sentiment_update: "*/5 * * * *"        # every 5 minutes
+  model_prediction: "*/15 * * * *"       # every 15 minutes  
+  portfolio_rebalance: "0 * * * *"       # hourly
+  risk_check: "*/1 * * * *"              # every minute
+  daily_report: "0 18 * * *"             # 6 PM daily
+  model_retrain: "0 2 * * 0"             # 2 AM Sunday
+
+# === DATABASE ===
+database:
+  type: "postgresql"  # postgresql, sqlite
+  host: "localhost"
+  port: 5432
+  name: "quantum"
+  pool_size: 10
+  
+  # SQLite fallback
+  sqlite_path: "data/quantum.db"
+
+# === CACHING ===
+cache:
+  type: "redis"  # redis, memory
+  host: "localhost"  
+  port: 6379
+  ttl: 300       # 5 minutes default TTL
+  
+# === MONITORING & ALERTS ===
+monitoring:
+  dashboard:
+    enabled: true
+    host: "0.0.0.0"
+    port: 8000
+    
+  alerts:
+    telegram:
+      enabled: false  # Set to true if configured
+      chat_id: ""
+      
+    discord:
+      enabled: false  # Set to true if configured
+      webhook_url: ""
+      
+    email:
+      enabled: false
+      smtp_server: ""
+      port: 587
+      
+  metrics:
+    track_latency: true
+    track_memory: true
+    track_predictions: true
+
+# === BACKTESTING ===
+backtest:
+  start_date: "2022-01-01"
+  end_date: "2024-12-31"
+  initial_capital: 1000.0
+  
+  commission:
+    stock: 0.001      # 0.1%
+    crypto: 0.002     # 0.2%
+    
+  slippage:
+    model: "market_impact"
+    base_cost: 0.0005  # 0.05%
+    
+  validation:
+    walk_forward: true
+    train_days: 90
+    test_days: 30
+    monte_carlo_runs: 1000
+
+# === DEVELOPMENT ===
+development:
+  debug: false
+  profiling: false
+  mock_apis: false    # Use mock data for testing
+  fast_mode: false    # Skip expensive operations

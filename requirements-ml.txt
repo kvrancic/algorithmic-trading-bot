@@ -1,0 +1,65 @@
+# ML & AI Dependencies for QuantumSentiment Trading Bot
+# Phase 2: Machine Learning Engine
+
+# Deep Learning Framework
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
+
+# Transformers & NLP
+transformers>=4.35.0
+tokenizers>=0.14.0
+datasets>=2.14.0
+sentence-transformers>=2.2.0  # Sentence embeddings
+
+# Traditional ML
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+lightgbm>=4.1.0
+catboost>=1.2.0  # Additional gradient boosting
+
+# Hyperparameter Optimization
+optuna>=3.4.0
+hyperopt>=0.2.7
+
+# Time Series & Finance ML
+statsmodels>=0.14.0
+arch>=6.2.0  # GARCH models
+pykalman>=0.9.5  # Kalman filters
+hurst>=0.0.5  # Hurst exponent
+ta>=0.10.2  # Technical analysis
+
+# Portfolio Optimization
+cvxpy>=1.4.0  # Convex optimization
+pyportfolioopt>=1.5.0
+quantlib>=1.32  # Quantitative finance
+
+# Feature Engineering
+featuretools>=1.27.0
+tsfresh>=0.20.0  # Time series features
+
+# Model Explanation & Interpretability
+shap>=0.43.0
+lime>=0.2.0.1
+eli5>=0.13.0
+
+# Visualization for ML
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.17.0
+bokeh>=3.3.0
+
+# Jupyter & Development
+jupyter>=1.0.0
+ipykernel>=6.25.0
+notebook>=7.0.0
+
+# GPU Support (CUDA - Optional)
+# Uncomment if GPU available:
+# torch==2.1.0+cu118 -f https://download.pytorch.org/whl/torch_stable.html
+# torchvision==0.16.0+cu118 -f https://download.pytorch.org/whl/torch_stable.html
+
+# Memory & Performance
+memory-profiler>=0.61.0
+psutil>=5.9.0
+joblib>=1.3.0

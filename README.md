@@ -33,15 +33,18 @@
 - **Risk Management:** VaR, Kelly Criterion, dynamic position sizing
 - **Execution Engine:** Smart order routing with slippage modeling
 
-**System Architecture:**
+**System Architecture Evolution:**
+
+**Phase 1-5: Direct API Foundation**
 ```
 ┌─────────────────────────┐
-│   MCP Data Servers      │
+│   Direct API Layer      │
 ├─────────────────────────┤
-│ • Alpaca (Stocks/Crypto)│
-│ • DexPaprika (DeFi)     │
-│ • WSB Analyst (Reddit)  │
-│ • Alpha Vantage (Macro) │
+│ • Alpaca API            │
+│ • Reddit (praw)         │
+│ • Twitter API           │
+│ • Alpha Vantage         │
+│ • Crypto APIs           │
 └───────────┬─────────────┘
             │
      ┌──────▼──────┐
@@ -66,8 +69,46 @@
      └──────┬──────┘
             │
      ┌──────▼──────┐
-     │ Alpaca MCP  │
+     │ Alpaca API  │
      │ (Orders)    │
+     └─────────────┘
+```
+
+**Phase 6: + LLM Intelligence Layer**
+```
+     ┌──────────────┐
+     │ LLM Decision │ ← Overrides/Enhances
+     │ Engine       │   ML predictions
+     └──────┬───────┘
+            │
+     ┌──────▼──────┐
+     │ Enhanced    │
+     │ Signal      │
+     │ Generation  │
+     └─────────────┘
+```
+
+**Phase 7: Full MCP + LLM Architecture**
+```
+┌─────────────────────────┐
+│ LLM-Enhanced MCP        │
+│ Data Servers            │ ← Intelligent analysis
+├─────────────────────────┤   at data layer
+│ • Smart Alpaca MCP      │
+│ • Intelligent Reddit    │
+│ • LLM News Analysis     │
+│ • Crypto Intelligence   │
+└───────────┬─────────────┘
+            │
+     ┌──────▼──────┐
+     │ LLM-Powered │      ┌─────────────────┐
+     │ Feature     │      │ Enhanced ML     │
+     │ Pipeline    │      │ Model Zoo       │
+     └──────┬──────┘      └─────────────────┘
+            │
+     ┌──────▼──────┐
+     │ LLM Decision│ ← Final intelligent
+     │ Layer       │   decision making
      └─────────────┘
 ```
 
@@ -93,23 +134,21 @@ pip install -r requirements-ml.txt
 pip install torch==2.0.0+cu118 -f https://download.pytorch.org/whl/torch_stable.html
 ```
 
-### 2. Install MCP Servers
+### 2. Install Direct API Dependencies (Phase 1-5)
 ```bash
-# Run automated MCP setup
-./scripts/install_mcp_servers.sh
+# Install trading and data APIs
+pip install alpaca-trade-api praw tweepy alpha-vantage requests
 
-# Or manually install each:
-# Alpaca MCP
-cd mcp_servers
-git clone https://github.com/laukikk/alpaca-mcp.git
-cd alpaca-mcp && pip install -e . && cd ../..
+# Install ML and analysis libraries
+pip install torch transformers xgboost lightgbm scikit-learn
 
-# DexPaprika MCP (no auth needed!)
-npm install -g @coinpaprika/dexpaprika-mcp
+# Install technical analysis
+pip install ta-lib pandas-ta
 
-# WSB Analyst MCP
-git clone https://github.com/ferdousbhai/wsb-analyst-mcp.git
-cd wsb-analyst-mcp && npm install && cd ../..
+# Install database and caching
+pip install postgresql redis sqlalchemy
+
+# Note: MCP servers will be added in Phase 7
 ```
 
 ### 3. Configure Environment
@@ -162,16 +201,15 @@ python scripts/backtest.py --strategy all --validate
 python scripts/test_risk_limits.py --capital 1000
 ```
 
-### 7. Launch System (Paper Mode)
+### 7. Launch System (Paper Mode - Phase 1-5)
 ```bash
-# Start all MCP servers
-./scripts/start_mcp_servers.sh
-
-# Launch trading system in paper mode
+# Launch trading system with direct APIs in paper mode
 python src/main.py --mode paper --config config/config.yaml
 
 # Monitor in real-time
 python src/monitor.py --dashboard
+
+# Note: Phase 6 will add LLM layer, Phase 7 will add MCP servers
 ```
 
 ### 8. Analyze Performance
@@ -949,25 +987,25 @@ A: Check for data leaks in feature pipeline
 - ✅ Vectorized backtesting
 - ✅ Multi-source sentiment (Reddit, Twitter, UnusualWhales)
 
-### v2.0 (Q2 2025)
+### v2.0 (Q3 2025)
 - 🔄 Reinforcement learning market maker
 - 🔄 Cross-exchange arbitrage
 - 🔄 Options strategies (delta hedging)
 - 🔄 Alternative data integration (satellite, web scraping)
 - 🔄 Discord/Telegram sentiment integration
 
-### v3.0 (Q3 2025)
+### v3.0 (Q4 2025)
 - 📋 Transformer architecture for full market attention
 - 📋 Multi-agent competition framework
 - 📋 Zero-knowledge proof for strategy verification
 - 📋 Quantum computing for portfolio optimization
 - 📋 On-chain sentiment from blockchain data
 
-### v4.0 (Q4 2025)
+### v4.0 (Q1 2026)
 - 🚀 Self-improving neural architecture search
 - 🚀 Decentralized strategy marketplace
 - 🚀 Brain-computer interface for trader intuition capture
-- 🚀 AGI integration (when available)
+- 🚀 AGI integration (who knows hehe)
 
 ## 💡 Expert Mode Commands
 
@@ -985,15 +1023,6 @@ kubectl apply -f k8s/quantum-sentiment.yaml
 python -m quantum.sentiment --ticker GME --sources all
 ```
 
-## 🤔 Questions for Your Quant Friend
-
-Before unleashing this beast:
-
-1. "Is it concerning that my trading bot has more parameters than a Boeing 747 flight manual?"
-
-2. "When the ML models achieve consciousness and start trading for themselves, do I still get the profits?"
-
-3. "If I'm using the same indicators everyone else uses, but with more decimal places, is that still alpha?"
 
 ---
 
