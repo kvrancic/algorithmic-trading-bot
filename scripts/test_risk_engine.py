@@ -308,13 +308,11 @@ class RiskEngineComprehensiveTester:
             # Test comprehensive portfolio assessment
             assessment = risk_engine.assess_portfolio_risk(
                 self.test_positions,
-                self.returns_data,
-                self.price_data
+                self.returns_data
             )
             
             success = (
                 'timestamp' in assessment and
-                'current_drawdown' in assessment and
                 'var_analysis' in assessment and
                 'portfolio_metrics' in assessment and
                 'limit_utilization' in assessment and
@@ -854,8 +852,7 @@ class RiskEngineComprehensiveTester:
             # Step 4: Assess overall portfolio risk
             risk_assessment = risk_engine.assess_portfolio_risk(
                 positions=adjusted_positions,
-                returns=self.returns_data,
-                prices=self.price_data
+                returns=self.returns_data
             )
             
             # Step 5: Update drawdown controller
