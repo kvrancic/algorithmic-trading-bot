@@ -32,8 +32,22 @@ try:
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
-    logger = structlog.get_logger(__name__)
-    logger.warning("Selenium not available - web scraping features disabled")
+
+# Optional playwright import for modern web scraping (preferred)
+try:
+    from playwright.sync_api import sync_playwright, Browser, Page
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+
+# Log available scraping options
+logger = structlog.get_logger(__name__)
+if PLAYWRIGHT_AVAILABLE:
+    logger.info("Playwright available - using modern web scraping")
+elif SELENIUM_AVAILABLE:
+    logger.info("Selenium available - using legacy web scraping")
+else:
+    logger.warning("Neither Playwright nor Selenium available - web scraping features disabled")
 
 logger = structlog.get_logger(__name__)
 
@@ -46,7 +60,8 @@ class UnusualWhalesConfig:
     user_agent: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
     timeout: int = 30
     max_retries: int = 3
-    use_selenium: bool = True
+    use_playwright: bool = True  # Prefer Playwright over Selenium
+    use_selenium: bool = False   # Fallback to Selenium if Playwright unavailable
     headless: bool = True
     
     # Analysis parameters
@@ -73,6 +88,9 @@ class UnusualWhalesAnalyzer:
         """
         self.config = config
         self.driver = None
+        self.playwright = None
+        self.browser = None
+        self.page = None
         
         # Political figures and their parties (simplified mapping)
         self.political_mapping = {
@@ -102,6 +120,49 @@ class UnusualWhalesAnalyzer:
     def initialize(self) -> bool:
         """Initialize web scraping capabilities"""
         try:
+            # Try Playwright first (preferred)
+            if self.config.use_playwright and PLAYWRIGHT_AVAILABLE:
+                try:
+                    self.playwright = sync_playwright().start()
+                    
+                    # Launch browser with stealth options for Cloudflare bypass
+                    browser_args = [
+                        '--no-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-web-security',
+                        '--allow-running-insecure-content'
+                    ]
+                    
+                    self.browser = self.playwright.chromium.launch(
+                        headless=self.config.headless,
+                        args=browser_args
+                    )
+                    
+                    # Create page with stealth settings
+                    context = self.browser.new_context(
+                        user_agent=self.config.user_agent,
+                        viewport={'width': 1920, 'height': 1080}
+                    )
+                    
+                    self.page = context.new_page()
+                    
+                    # Add stealth scripts
+                    self.page.add_init_script("""
+                        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                        window.chrome = {runtime: {}};
+                        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+                    """)
+                    
+                    logger.info("Playwright browser initialized with Cloudflare bypass")
+                    return True
+                    
+                except Exception as e:
+                    logger.warning("Playwright initialization failed, falling back to Selenium", error=str(e))
+                    self.cleanup()
+            
+            # Fallback to Selenium
             if self.config.use_selenium and SELENIUM_AVAILABLE:
                 # Setup Chrome driver with Cloudflare bypass options
                 chrome_options = Options()
@@ -125,14 +186,16 @@ class UnusualWhalesAnalyzer:
                     self.driver = webdriver.Chrome(options=chrome_options)
                     self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                     logger.info("Selenium WebDriver initialized for Cloudflare bypass")
+                    return True
                 except Exception as e:
                     logger.warning("Chrome WebDriver not available - using mock mode", error=str(e))
                     self.driver = None
+            
+            # No scraping available
+            if not PLAYWRIGHT_AVAILABLE and not SELENIUM_AVAILABLE:
+                logger.info("Neither Playwright nor Selenium available - operating in mock mode")
             else:
-                if not SELENIUM_AVAILABLE:
-                    logger.info("Selenium not available - operating in mock mode")
-                else:
-                    logger.info("Selenium disabled by configuration - operating in mock mode")
+                logger.info("Web scraping disabled by configuration - operating in mock mode")
             
             return True
             
@@ -233,74 +296,23 @@ class UnusualWhalesAnalyzer:
             raise
     
     def _get_congressional_trades(self, symbol: str, cutoff_date: datetime) -> List[Dict[str, Any]]:
-        """Scrape congressional trading data for the symbol"""
+        """Scrape congressional trading data for the symbol using real UnusualWhales structure"""
         trades = []
         
         try:
-            # This is a simplified implementation
-            # In production, you'd need to reverse-engineer UnusualWhales' API endpoints
-            # or scrape their website with proper Cloudflare bypass
+            # Try JSON API approach first (more reliable)
+            json_trades = self._get_trades_from_json_api(symbol, cutoff_date)
+            if json_trades:
+                logger.info("Retrieved trades from JSON API", count=len(json_trades))
+                return json_trades
             
-            if self.driver:
-                # Example URL structure (would need to be updated based on actual site)
-                url = f"https://unusualwhales.com/congress?symbol={symbol}"
-                
-                self.driver.get(url)
-                time.sleep(2)  # Wait for page load
-                
-                # Wait for content to load (bypass Cloudflare if needed)
-                try:
-                    WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.CLASS_NAME, "trade-row"))
-                    )
-                except:
-                    logger.warning("Could not find trade data on page")
-                    return []
-                
-                # Parse trading data
-                trade_elements = self.driver.find_elements(By.CLASS_NAME, "trade-row")
-                
-                for element in trade_elements:
-                    try:
-                        # Extract trade information (this would need to match actual HTML structure)
-                        politician_name = element.find_element(By.CLASS_NAME, "politician-name").text
-                        trade_type = element.find_element(By.CLASS_NAME, "trade-type").text
-                        trade_date = element.find_element(By.CLASS_NAME, "trade-date").text
-                        trade_value = element.find_element(By.CLASS_NAME, "trade-value").text
-                        
-                        # Parse date
-                        trade_datetime = datetime.strptime(trade_date, "%Y-%m-%d")
-                        
-                        if trade_datetime >= cutoff_date:
-                            # Get politician info
-                            politician_info = self.political_mapping.get(
-                                politician_name.lower(), 
-                                {'party': 'Unknown', 'influence': 1, 'position': 'Unknown'}
-                            )
-                            
-                            # Parse trade value
-                            value = self._parse_trade_value(trade_value)
-                            
-                            if value >= self.config.min_trade_value:
-                                trades.append({
-                                    'politician': politician_name,
-                                    'party': politician_info['party'],
-                                    'influence_score': politician_info['influence'],
-                                    'position': politician_info['position'],
-                                    'trade_type': trade_type,
-                                    'trade_date': trade_datetime,
-                                    'value': value,
-                                    'symbol': symbol.upper(),
-                                    'raw_data': {
-                                        'element_html': element.get_attribute('innerHTML')
-                                    }
-                                })
-                    
-                    except Exception as e:
-                        logger.warning("Failed to parse trade element", error=str(e))
-                        continue
+            # Fallback to DOM scraping
+            if self.page:  # Playwright scraping with real selectors
+                trades = self._scrape_trades_with_playwright(symbol, cutoff_date)
+            elif self.driver:  # Selenium fallback
+                trades = self._scrape_trades_with_selenium(symbol, cutoff_date)
             
-            # Fallback: Generate some realistic sample data for testing
+            # Final fallback: Generate some realistic sample data for testing
             if not trades and self.config.lookback_days <= 7:  # Only for testing
                 trades = self._generate_sample_congress_data(symbol, cutoff_date)
             
@@ -309,6 +321,325 @@ class UnusualWhalesAnalyzer:
             
         except Exception as e:
             logger.warning("Failed to get congressional trades", error=str(e))
+            return []
+    
+    def _get_trades_from_json_api(self, symbol: str, cutoff_date: datetime) -> List[Dict[str, Any]]:
+        """Get trades from UnusualWhales Next.js JSON API"""
+        trades = []
+        
+        try:
+            if not self.page:
+                return []
+                
+            # First, navigate to politics page to get the build ID
+            politics_url = "https://unusualwhales.com/politics"
+            self.page.goto(politics_url, timeout=self.config.timeout * 1000)
+            
+            # Extract build ID from __NEXT_DATA__ script
+            next_data_script = self.page.query_selector('#__NEXT_DATA__')
+            if not next_data_script:
+                logger.warning("Could not find __NEXT_DATA__ script")
+                return []
+            
+            next_data_content = next_data_script.inner_text()
+            next_data = json.loads(next_data_content)
+            build_id = next_data.get('buildId')
+            
+            if not build_id:
+                logger.warning("Could not extract build ID from Next.js data")
+                return []
+            
+            # Fetch trade data from Next.js API
+            api_url = f"https://unusualwhales.com/_next/data/{build_id}/politics.json"
+            response = self.page.request.get(api_url)
+            
+            if response.status != 200:
+                logger.warning("Failed to fetch trade data from API", status=response.status)
+                return []
+            
+            api_data = response.json()
+            trade_data = api_data.get('pageProps', {}).get('trade_data', [])
+            
+            # Process JSON trade data
+            for trade_json in trade_data:
+                try:
+                    # Parse transaction date
+                    transaction_date_str = trade_json.get('transaction_date', '')
+                    if not transaction_date_str:
+                        continue
+                        
+                    trade_date = datetime.strptime(transaction_date_str, '%Y-%m-%d')
+                    
+                    if trade_date < cutoff_date:
+                        continue
+                    
+                    # Filter by symbol if specified (check multiple fields)
+                    trade_symbol = (trade_json.get('asset_description') or '').upper()
+                    symbol_field = (trade_json.get('symbol') or '').upper()
+                    notes_field = (trade_json.get('notes') or '').upper()
+                    
+                    # Only filter by symbol if a specific symbol was requested
+                    if symbol and symbol.strip():
+                        symbol_upper = symbol.upper()
+                        if not (symbol_upper in trade_symbol or 
+                               symbol_upper in symbol_field or 
+                               symbol_upper in notes_field):
+                            continue
+                    
+                    # Extract politician info
+                    reporter = trade_json.get('reporter', '')
+                    politician_info = self.political_mapping.get(
+                        reporter.lower(),
+                        {'party': 'Unknown', 'influence': 1, 'position': 'Unknown'}
+                    )
+                    
+                    # Parse transaction type and amounts
+                    txn_type = trade_json.get('txn_type', '').lower()
+                    amounts_str = trade_json.get('amounts', '')
+                    
+                    # Calculate trade value from amount string like "$1,001 - $15,000"
+                    trade_value = 0
+                    if amounts_str and isinstance(amounts_str, str):
+                        try:
+                            # Extract numbers from strings like "$1,001 - $15,000"
+                            import re
+                            numbers = re.findall(r'[\d,]+', amounts_str.replace('$', ''))
+                            if len(numbers) >= 2:
+                                min_amount = float(numbers[0].replace(',', ''))
+                                max_amount = float(numbers[1].replace(',', ''))
+                                trade_value = (min_amount + max_amount) / 2
+                            elif len(numbers) == 1:
+                                trade_value = float(numbers[0].replace(',', ''))
+                        except (ValueError, TypeError):
+                            trade_value = 0
+                    
+                    if trade_value >= self.config.min_trade_value:
+                        # Extract the actual traded symbol
+                        actual_symbol = symbol_field or trade_symbol or (trade_json.get('symbol') or '').upper()
+                        if not actual_symbol and notes_field:
+                            # Try to extract symbol from notes like "Liberty Media Corporation - Series C Liberty Live Common Stock (LLYVK)"
+                            import re
+                            symbol_match = re.search(r'\(([A-Z]{2,5})\)', notes_field)
+                            if symbol_match:
+                                actual_symbol = symbol_match.group(1)
+                        
+                        trades.append({
+                            'politician': reporter,
+                            'party': politician_info['party'],
+                            'influence_score': politician_info['influence'],
+                            'position': politician_info['position'],
+                            'trade_type': 'buy' if 'buy' in txn_type or 'purchase' in txn_type else 'sell',
+                            'trade_date': trade_date,
+                            'value': trade_value,
+                            'symbol': actual_symbol or 'UNKNOWN',
+                            'raw_data': {
+                                'source': 'json_api',
+                                'original_data': trade_json
+                            }
+                        })
+                
+                except Exception as e:
+                    logger.warning("Failed to parse JSON trade data", error=str(e))
+                    continue
+            
+            return trades
+            
+        except Exception as e:
+            logger.warning("Failed to get trades from JSON API", error=str(e))
+            return []
+    
+    def _scrape_trades_with_playwright(self, symbol: str, cutoff_date: datetime) -> List[Dict[str, Any]]:
+        """Scrape trades using Playwright with real UnusualWhales DOM selectors"""
+        trades = []
+        
+        try:
+            # Navigate to politics page
+            politics_url = "https://unusualwhales.com/politics"
+            self.page.goto(politics_url, timeout=self.config.timeout * 1000)
+            
+            # Wait for JavaScript to hydrate
+            self.page.wait_for_timeout(3000)
+            
+            # Look for "see all" link and click it to load full table
+            try:
+                see_all_selector = "text=see all"
+                self.page.wait_for_selector(see_all_selector, timeout=5000)
+                self.page.click(see_all_selector)
+                logger.info("Clicked 'see all' link to load full trade data")
+                self.page.wait_for_timeout(2000)  # Wait for data to load
+            except:
+                logger.info("Could not find 'see all' link, proceeding with visible data")
+            
+            # Wait for table to be present
+            try:
+                self.page.wait_for_selector("tbody tr", timeout=10000)
+            except:
+                logger.warning("Could not find trade table")
+                return []
+            
+            # Get all trade rows
+            trade_rows = self.page.query_selector_all("tbody tr")
+            logger.info("Found trade rows", count=len(trade_rows))
+            
+            for row in trade_rows:
+                try:
+                    # Extract data using the real selectors
+                    politician_name_element = row.query_selector("td:nth-child(1) a")
+                    if not politician_name_element:
+                        continue
+                    politician_name = politician_name_element.inner_text().strip()
+                    
+                    # Check if this trade involves our symbol
+                    symbol_element = row.query_selector("td:nth-child(2)")
+                    if symbol_element:
+                        row_symbol = symbol_element.inner_text().strip().upper()
+                        if symbol.upper() not in row_symbol:
+                            continue  # Skip trades not involving our symbol
+                    
+                    # Extract trade date
+                    date_element = row.query_selector("td:nth-child(3)")
+                    if not date_element:
+                        continue
+                    date_text = date_element.inner_text().strip()
+                    
+                    # Parse date (handle various formats)
+                    trade_date = self._parse_date(date_text)
+                    if not trade_date or trade_date < cutoff_date:
+                        continue
+                    
+                    # Extract transaction type
+                    type_element = row.query_selector("td:nth-child(4) span:first-child")
+                    if not type_element:
+                        continue
+                    trade_type = type_element.inner_text().strip().lower()
+                    
+                    # Extract trade value
+                    value_element = row.query_selector("td:nth-child(4) span:nth-child(2)")
+                    if not value_element:
+                        continue
+                    value_text = value_element.inner_text().strip()
+                    trade_value = self._parse_trade_value(value_text)
+                    
+                    if trade_value >= self.config.min_trade_value:
+                        # Get politician info
+                        politician_info = self.political_mapping.get(
+                            politician_name.lower(),
+                            {'party': 'Unknown', 'influence': 1, 'position': 'Unknown'}
+                        )
+                        
+                        trades.append({
+                            'politician': politician_name,
+                            'party': politician_info['party'],
+                            'influence_score': politician_info['influence'],
+                            'position': politician_info['position'],
+                            'trade_type': 'buy' if 'buy' in trade_type or 'purchase' in trade_type else 'sell',
+                            'trade_date': trade_date,
+                            'value': trade_value,
+                            'symbol': symbol.upper(),
+                            'raw_data': {
+                                'source': 'dom_scraping',
+                                'row_html': row.inner_html()
+                            }
+                        })
+                
+                except Exception as e:
+                    logger.warning("Failed to parse trade row", error=str(e))
+                    continue
+            
+            return trades
+            
+        except Exception as e:
+            logger.warning("Playwright DOM scraping failed", error=str(e))
+            return []
+    
+    def _scrape_trades_with_selenium(self, symbol: str, cutoff_date: datetime) -> List[Dict[str, Any]]:
+        """Scrape trades using Selenium with real selectors (fallback)"""
+        trades = []
+        
+        try:
+            # Navigate to politics page
+            politics_url = "https://unusualwhales.com/politics"
+            self.driver.get(politics_url)
+            time.sleep(3)  # Wait for JavaScript hydration
+            
+            # Try to click "see all" link
+            try:
+                see_all_element = self.driver.find_element(By.XPATH, "//*[contains(text(), 'see all')]")
+                see_all_element.click()
+                logger.info("Clicked 'see all' link to load full trade data")
+                time.sleep(2)
+            except:
+                logger.info("Could not find 'see all' link, proceeding with visible data")
+            
+            # Wait for table
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr"))
+                )
+            except:
+                logger.warning("Could not find trade table")
+                return []
+            
+            # Get all trade rows
+            trade_rows = self.driver.find_elements(By.CSS_SELECTOR, "tbody tr")
+            logger.info("Found trade rows", count=len(trade_rows))
+            
+            for row in trade_rows:
+                try:
+                    # Extract politician name
+                    politician_element = row.find_element(By.CSS_SELECTOR, "td:nth-child(1) a")
+                    politician_name = politician_element.text.strip()
+                    
+                    # Check symbol
+                    symbol_element = row.find_element(By.CSS_SELECTOR, "td:nth-child(2)")
+                    row_symbol = symbol_element.text.strip().upper()
+                    if symbol.upper() not in row_symbol:
+                        continue
+                    
+                    # Extract date
+                    date_element = row.find_element(By.CSS_SELECTOR, "td:nth-child(3)")
+                    date_text = date_element.text.strip()
+                    trade_date = self._parse_date(date_text)
+                    if not trade_date or trade_date < cutoff_date:
+                        continue
+                    
+                    # Extract type and value
+                    type_element = row.find_element(By.CSS_SELECTOR, "td:nth-child(4) span:first-child")
+                    trade_type = type_element.text.strip().lower()
+                    
+                    value_element = row.find_element(By.CSS_SELECTOR, "td:nth-child(4) span:nth-child(2)")
+                    value_text = value_element.text.strip()
+                    trade_value = self._parse_trade_value(value_text)
+                    
+                    if trade_value >= self.config.min_trade_value:
+                        politician_info = self.political_mapping.get(
+                            politician_name.lower(),
+                            {'party': 'Unknown', 'influence': 1, 'position': 'Unknown'}
+                        )
+                        
+                        trades.append({
+                            'politician': politician_name,
+                            'party': politician_info['party'],
+                            'influence_score': politician_info['influence'],
+                            'position': politician_info['position'],
+                            'trade_type': 'buy' if 'buy' in trade_type or 'purchase' in trade_type else 'sell',
+                            'trade_date': trade_date,
+                            'value': trade_value,
+                            'symbol': symbol.upper(),
+                            'raw_data': {
+                                'source': 'selenium_scraping',
+                                'row_html': row.get_attribute('innerHTML')
+                            }
+                        })
+                
+                except Exception as e:
+                    logger.warning("Failed to parse trade row with Selenium", error=str(e))
+                    continue
+            
+            return trades
+            
+        except Exception as e:
+            logger.warning("Selenium DOM scraping failed", error=str(e))
             return []
     
     def _get_insider_trades(self, symbol: str, cutoff_date: datetime) -> List[Dict[str, Any]]:
@@ -329,6 +660,49 @@ class UnusualWhalesAnalyzer:
         except Exception as e:
             logger.warning("Failed to get insider trades", error=str(e))
             return []
+    
+    def _parse_date(self, date_str: str) -> Optional[datetime]:
+        """Parse date string from various formats used by UnusualWhales"""
+        if not date_str:
+            return None
+            
+        # Common date formats used by UnusualWhales
+        formats = [
+            '%Y-%m-%d',      # 2023-12-25
+            '%m/%d/%Y',      # 12/25/2023
+            '%m/%d/%y',      # 12/25/23
+            '%b %d, %Y',     # Dec 25, 2023
+            '%B %d, %Y',     # December 25, 2023
+            '%d %b %Y',      # 25 Dec 2023
+            '%d %B %Y',      # 25 December 2023
+        ]
+        
+        # Clean the date string
+        date_str = date_str.strip()
+        
+        for fmt in formats:
+            try:
+                return datetime.strptime(date_str, fmt)
+            except ValueError:
+                continue
+        
+        # Try to handle relative dates like "2 days ago"
+        if 'ago' in date_str.lower():
+            try:
+                if 'day' in date_str:
+                    days = int(re.search(r'(\d+)', date_str).group(1))
+                    return datetime.utcnow() - timedelta(days=days)
+                elif 'week' in date_str:
+                    weeks = int(re.search(r'(\d+)', date_str).group(1))
+                    return datetime.utcnow() - timedelta(weeks=weeks)
+                elif 'month' in date_str:
+                    months = int(re.search(r'(\d+)', date_str).group(1))
+                    return datetime.utcnow() - timedelta(days=months * 30)
+            except:
+                pass
+        
+        logger.warning("Could not parse date", date_str=date_str)
+        return None
     
     def _parse_trade_value(self, value_str: str) -> float:
         """Parse trade value string to float"""
@@ -646,19 +1020,51 @@ class UnusualWhalesAnalyzer:
     
     def cleanup(self):
         """Clean up resources"""
+        # Cleanup Playwright resources
+        if self.page:
+            try:
+                self.page.close()
+                logger.debug("Playwright page closed")
+            except Exception as e:
+                logger.warning("Error closing Playwright page", error=str(e))
+            finally:
+                self.page = None
+        
+        if self.browser:
+            try:
+                self.browser.close()
+                logger.debug("Playwright browser closed")
+            except Exception as e:
+                logger.warning("Error closing Playwright browser", error=str(e))
+            finally:
+                self.browser = None
+        
+        if self.playwright:
+            try:
+                self.playwright.stop()
+                logger.info("Playwright stopped")
+            except Exception as e:
+                logger.warning("Error stopping Playwright", error=str(e))
+            finally:
+                self.playwright = None
+        
+        # Cleanup Selenium resources
         if self.driver:
             try:
                 self.driver.quit()
-                logger.info("WebDriver closed")
+                logger.info("Selenium WebDriver closed")
             except Exception as e:
-                logger.warning("Error closing WebDriver", error=str(e))
+                logger.warning("Error closing Selenium WebDriver", error=str(e))
+            finally:
+                self.driver = None
     
     def __del__(self):
         """Destructor to ensure cleanup"""
         self.cleanup()
     
     def __str__(self) -> str:
-        return f"UnusualWhalesAnalyzer(selenium={self.config.use_selenium})"
+        scraper = "playwright" if self.config.use_playwright and PLAYWRIGHT_AVAILABLE else "selenium" if self.config.use_selenium and SELENIUM_AVAILABLE else "mock"
+        return f"UnusualWhalesAnalyzer(scraper={scraper})"
     
     def __repr__(self) -> str:
         return self.__str__()

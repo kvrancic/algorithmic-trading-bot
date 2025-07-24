@@ -31,7 +31,7 @@ class FusionConfig:
     confidence_threshold: float = 0.1
     recency_decay_hours: float = 12.0
     anomaly_threshold: float = 3.0  # Z-score threshold
-    min_sources_required: int = 2
+    min_sources_required: int = 1  # Allow single source with reduced confidence
     
     # Calibration parameters
     sentiment_scale_factor: float = 1.0
@@ -317,8 +317,8 @@ class SentimentFusion:
         individual_confidences = [data.get('confidence', 0) for data in valid_sources.values()]
         avg_confidence = np.mean(individual_confidences)
         
-        # Source count bonus (more sources = higher confidence)
-        source_count_factor = min(len(valid_sources) / 4, 1.0)  # Max at 4 sources
+        # Source count bonus (more sources = higher confidence, but don't penalize single source too much)
+        source_count_factor = min(0.7 + (len(valid_sources) - 1) * 0.1, 1.0)  # Start at 0.7 for single source
         
         # Agreement factor (similar sentiments = higher confidence)
         sentiments = [data.get('sentiment_score', 0) for data in valid_sources.values()]

@@ -531,12 +531,19 @@ class NewsAggregator:
             for sector, count in sector_counts.items():
                 sector_exposure[sector] = count / total_articles
         
+        # Normalize impact score to 0-1 range
+        mean_impact = np.mean(impact_scores) if impact_scores else 0
+        max_possible_impact = 10  # Reasonable maximum (3 keywords * 3 weight * 1 credibility)
+        normalized_impact = min(mean_impact / max_possible_impact, 1.0)
+        
         return {
-            'impact_score': np.mean(impact_scores) if impact_scores else 0,
+            'impact_score': normalized_impact,
+            'raw_impact_score': mean_impact,  # Keep raw score for debugging
             'max_impact_score': max(impact_scores) if impact_scores else 0,
             'high_impact_events': high_impact_events,
             'sector_exposure': sector_exposure,
-            'total_impact_events': len([s for s in impact_scores if s >= 3])
+            'total_impact_events': len([s for s in impact_scores if s >= 3]),
+            'keywords_found': list(set([kw for event in high_impact_events for kw in event.get('keywords', [])]))
         }
     
     def _detect_news_spike(self, articles: List[Dict[str, Any]], cutoff_time: datetime) -> Dict[str, Any]:

@@ -39,6 +39,7 @@ schedule>=1.2.0  # Task scheduling
 python-telegram-bot>=20.0  # Alerts
 feedparser>=6.0.10  # RSS feed parsing
 selenium>=4.15.0  # Web scraping for Cloudflare bypass
+playwright>=1.40.0  # Modern web scraping with better Cloudflare bypass
 
 # FastAPI for dashboard/API (optional)
 fastapi>=0.104.0
