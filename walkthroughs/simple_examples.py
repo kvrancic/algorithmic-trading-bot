@@ -19,7 +19,8 @@ import sys
 import warnings
 warnings.filterwarnings('ignore')
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+# Add the parent directory to the path so we can import from src
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import numpy as np
 import pandas as pd
@@ -75,15 +76,16 @@ def example_lstm_prediction():
     try:
         from src.models.lstm.price_lstm import PriceLSTM, PriceLSTMConfig
         
-        # Create data
-        data = create_sample_data(days=10)
+        # Create data (need enough for sequences)
+        data = create_sample_data(days=20)
         
-        # Simple config
+        # Fixed config for realistic predictions
         config = PriceLSTMConfig(
             sequence_length=12,  # Look back 12 hours
             forecast_horizon=1,  # Predict 1 hour ahead
-            epochs=3,            # Quick training
+            epochs=10,           # Better training
             batch_size=8,
+            scaling_method="none",  # NO SCALING - predict returns directly
             save_path=Path("simple_demo/lstm")
         )
         
@@ -98,10 +100,17 @@ def example_lstm_prediction():
         train_size = int(len(data) * 0.8)
         train_data = data[:train_size]
         
-        features = train_data[['open', 'high', 'low', 'close', 'volume']]
-        # Target: next hour's price change
+        # Use percentage changes as features for more stable training
+        features = pd.DataFrame()
+        features['open_pct'] = train_data['open'].pct_change().fillna(0)
+        features['high_pct'] = train_data['high'].pct_change().fillna(0)
+        features['low_pct'] = train_data['low'].pct_change().fillna(0)
+        features['close_pct'] = train_data['close'].pct_change().fillna(0)
+        features['volume_norm'] = (train_data['volume'] - train_data['volume'].min()) / (train_data['volume'].max() - train_data['volume'].min())
+        
+        # Target: next hour's return (clipped to reasonable range)
         train_data['next_return'] = train_data['close'].pct_change().shift(-1)
-        targets = train_data['next_return'].fillna(0)
+        targets = np.clip(train_data['next_return'].fillna(0), -0.05, 0.05)
         
         print(f"\n🎓 Training on {len(train_data)} samples...")
         history = model.train(features, targets)
@@ -110,16 +119,25 @@ def example_lstm_prediction():
         # Make predictions
         test_data = data[train_size:]
         if len(test_data) > 12:  # Need enough data for sequence
-            test_features = test_data[['open', 'high', 'low', 'close', 'volume']]
+            # Apply same feature engineering to test data
+            test_features = pd.DataFrame()
+            test_features['open_pct'] = test_data['open'].pct_change().fillna(0)
+            test_features['high_pct'] = test_data['high'].pct_change().fillna(0)
+            test_features['low_pct'] = test_data['low'].pct_change().fillna(0)
+            test_features['close_pct'] = test_data['close'].pct_change().fillna(0)
+            # Use train data stats for volume normalization
+            vol_min, vol_max = train_data['volume'].min(), train_data['volume'].max()
+            test_features['volume_norm'] = (test_data['volume'] - vol_min) / (vol_max - vol_min)
+            
             predictions = model.predict(test_features)
             
             print(f"\n🔮 Predictions for next {len(predictions)} hours:")
             for i in range(min(5, len(predictions))):
                 current_price = test_data.iloc[i]['close']
-                predicted_change = predictions[i] * 100
-                predicted_price = current_price * (1 + predictions[i])
+                predicted_change = float(predictions[i]) * 100
+                predicted_price = current_price * (1 + float(predictions[i]))
                 
-                direction = "📈 UP" if predictions[i] > 0 else "📉 DOWN"
+                direction = "📈 UP" if float(predictions[i]) > 0 else "📉 DOWN"
                 print(f"Hour {i+1}: ${current_price:.2f} → ${predicted_price:.2f} ({predicted_change:+.2f}%) {direction}")
         
     except Exception as e:
@@ -140,8 +158,8 @@ def example_cnn_patterns():
     try:
         from src.models.cnn.chart_pattern_cnn import ChartPatternCNN, ChartPatternConfig
         
-        # Create data
-        data = create_sample_data(days=15)
+        # Create more data for CNN (needs more samples)
+        data = create_sample_data(days=30)
         
         # Simple config
         config = ChartPatternConfig(
@@ -149,6 +167,7 @@ def example_cnn_patterns():
             chart_width=32,
             epochs=2,            # Quick training
             batch_size=4,
+            balance_classes=False,  # Disable class balancing for demo
             save_path=Path("simple_demo/cnn")
         )
         
@@ -217,13 +236,14 @@ def example_xgboost_regime():
     try:
         from src.models.xgboost.market_regime_xgboost import MarketRegimeXGBoost, MarketRegimeConfig
         
-        # Create data
-        data = create_sample_data(days=20)
+        # Create data (need lots for technical indicators)
+        data = create_sample_data(days=40)
         
         # Simple config
         config = MarketRegimeConfig(
             n_estimators=20,  # Small forest for demo
             max_depth=3,
+            balance_classes=False,  # Disable class balancing for demo
             save_path=Path("simple_demo/xgboost")
         )
         
@@ -366,8 +386,8 @@ def example_quick_backtest():
     print("• Shows how it would have performed")
     print("• Calculates key performance metrics")
     
-    # Create data
-    data = create_sample_data(days=30)
+    # Create data (need enough for meaningful backtest)
+    data = create_sample_data(days=60)
     
     print(f"\n📊 Testing Strategy: 'Buy Low, Sell High'")
     print(f"• Buy when price drops 3% from recent high")
