@@ -41,6 +41,14 @@ class RedditConfig:
     min_comment_score: int = 2
     lookback_hours: int = 24
     
+    # High-stakes trading optimizations
+    enable_velocity_tracking: bool = True
+    enable_momentum_analysis: bool = True
+    enable_credibility_weighting: bool = True
+    velocity_alert_threshold: float = 3.0  # mentions/hour spike threshold
+    momentum_alert_threshold: float = 2.0  # momentum score alert level
+    min_credibility_for_signals: float = 0.6  # Filter low credibility signals
+    
     # Credibility scoring
     min_account_age_days: int = 30
     min_karma: int = 100
@@ -176,6 +184,11 @@ class RedditSentimentAnalyzer:
             option_signals = self._extract_option_signals(posts_data + comments_data)
             dd_analysis = self._analyze_dd_quality(posts_data)
             
+            # Deep analysis features for Phase 3.2
+            velocity_analysis = self._calculate_mention_velocity(posts_data, comments_data, symbol, hours_back)
+            momentum_analysis = self._analyze_momentum_indicators(posts_data, comments_data)
+            credibility_analysis = self._analyze_user_credibility_distribution(posts_data, comments_data)
+            
             # Calculate aggregated metrics
             results = {
                 'symbol': symbol.upper(),
@@ -201,6 +214,11 @@ class RedditSentimentAnalyzer:
                 'emoji_signals': emoji_signals,
                 'option_signals': option_signals,
                 'dd_analysis': dd_analysis,
+                
+                # Deep analysis (Phase 3.2)
+                'mention_velocity': velocity_analysis,
+                'momentum_indicators': momentum_analysis,
+                'credibility_distribution': credibility_analysis,
                 
                 # User credibility
                 'credibility_score': self._calculate_credibility_score(posts_data, comments_data),
@@ -732,6 +750,405 @@ class RedditSentimentAnalyzer:
             logger.error("Failed to get trending symbols", error=str(e))
             return []
     
+    def _calculate_mention_velocity(self, posts_data: List[Dict], comments_data: List[Dict], 
+                                   symbol: str, hours_back: Optional[int]) -> Dict[str, Any]:
+        """Calculate mention velocity (mentions per hour) for high-frequency trading signals"""
+        try:
+            hours_back = hours_back or 24
+            cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
+            
+            # Group mentions by hour
+            hourly_mentions = {}
+            
+            for item in posts_data + comments_data:
+                created_time = datetime.fromtimestamp(item.get('created_utc', 0))
+                if created_time >= cutoff_time:
+                    hour_key = created_time.replace(minute=0, second=0, microsecond=0)
+                    hourly_mentions[hour_key] = hourly_mentions.get(hour_key, 0) + 1
+            
+            if not hourly_mentions:
+                return {
+                    'mentions_per_hour': 0,
+                    'velocity_trend': 'stable',
+                    'acceleration': 0,
+                    'peak_hour': None,
+                    'peak_mentions': 0,
+                    'hourly_distribution': {}
+                }
+            
+            # Calculate velocity metrics
+            sorted_hours = sorted(hourly_mentions.keys())
+            mention_counts = [hourly_mentions[hour] for hour in sorted_hours]
+            
+            # Average mentions per hour
+            avg_mentions_per_hour = sum(mention_counts) / len(mention_counts)
+            
+            # Calculate acceleration (change in velocity)
+            if len(mention_counts) >= 2:
+                recent_avg = np.mean(mention_counts[-3:])  # Last 3 hours
+                earlier_avg = np.mean(mention_counts[:-3]) if len(mention_counts) > 3 else mention_counts[0]
+                acceleration = (recent_avg - earlier_avg) / max(earlier_avg, 1)
+            else:
+                acceleration = 0
+            
+            # Determine trend
+            if acceleration > 0.5:
+                trend = 'accelerating'
+            elif acceleration < -0.3:
+                trend = 'decelerating'
+            else:
+                trend = 'stable'
+            
+            # Find peak activity
+            if mention_counts:
+                peak_idx = np.argmax(mention_counts)
+                peak_hour = sorted_hours[peak_idx]
+                peak_mentions = mention_counts[peak_idx]
+            else:
+                peak_hour = None
+                peak_mentions = 0
+            
+            return {
+                'mentions_per_hour': avg_mentions_per_hour,
+                'velocity_trend': trend,
+                'acceleration': acceleration,
+                'peak_hour': peak_hour,
+                'peak_mentions': peak_mentions,
+                'hourly_distribution': {str(k): v for k, v in hourly_mentions.items()},
+                'total_hours_analyzed': len(hourly_mentions),
+                'current_hour_mentions': mention_counts[-1] if mention_counts else 0
+            }
+            
+        except Exception as e:
+            logger.warning("Failed to calculate mention velocity", error=str(e))
+            return {'mentions_per_hour': 0, 'velocity_trend': 'unknown', 'acceleration': 0}
+    
+    def _analyze_momentum_indicators(self, posts_data: List[Dict], comments_data: List[Dict]) -> Dict[str, Any]:
+        """Analyze momentum indicators for trading signals"""
+        try:
+            all_data = posts_data + comments_data
+            
+            # Momentum keywords and weights
+            momentum_keywords = {
+                # Bullish momentum
+                'breakout': 2.0, 'moon': 2.5, 'squeeze': 2.0, 'rally': 1.5,
+                'pump': 1.8, 'surge': 1.5, 'rocket': 2.0, 'explode': 1.8,
+                'takeoff': 1.5, 'momentum': 1.0,
+                
+                # Bearish momentum  
+                'crash': -2.0, 'dump': -2.5, 'collapse': -2.0, 'tank': -1.8,
+                'drill': -1.5, 'free fall': -2.0, 'plummet': -1.8,
+                
+                # Neutral/caution
+                'sideways': -0.5, 'flat': -0.3, 'stagnant': -0.5,
+                'consolidation': 0.2, 'support': 0.5, 'resistance': -0.3
+            }
+            
+            momentum_score = 0
+            keyword_counts = {}
+            high_conviction_posts = 0
+            
+            for item in all_data:
+                text = item.get('full_text', '').lower()
+                post_score = 0
+                
+                # Check for momentum keywords
+                for keyword, weight in momentum_keywords.items():
+                    count = len(re.findall(rf'\b{keyword}\b', text, re.IGNORECASE))
+                    if count > 0:
+                        post_score += count * weight
+                        keyword_counts[keyword] = keyword_counts.get(keyword, 0) + count
+                
+                # Weight by engagement (upvotes, comments)
+                engagement_multiplier = np.log1p(item.get('score', 0) + item.get('num_comments', 0)) / 3
+                post_score *= max(engagement_multiplier, 0.5)  # Minimum multiplier
+                
+                momentum_score += post_score
+                
+                # Count high conviction posts (strong language + high engagement)
+                if post_score > 5 and item.get('score', 0) > 50:
+                    high_conviction_posts += 1
+            
+            # Normalize momentum score
+            total_posts = len(all_data)
+            normalized_momentum = momentum_score / max(total_posts, 1)
+            
+            # Classify momentum strength
+            if normalized_momentum > 2.0:
+                momentum_strength = 'very_strong'
+            elif normalized_momentum > 1.0:
+                momentum_strength = 'strong'
+            elif normalized_momentum > 0.3:
+                momentum_strength = 'moderate'
+            elif normalized_momentum > -0.3:
+                momentum_strength = 'weak'
+            else:
+                momentum_strength = 'negative'
+            
+            return {
+                'momentum_score': normalized_momentum,
+                'momentum_strength': momentum_strength,
+                'high_conviction_posts': high_conviction_posts,
+                'keyword_breakdown': keyword_counts,
+                'bullish_momentum_keywords': sum(keyword_counts.get(k, 0) for k in momentum_keywords if momentum_keywords[k] > 0),
+                'bearish_momentum_keywords': sum(keyword_counts.get(k, 0) for k in momentum_keywords if momentum_keywords[k] < 0),
+                'momentum_direction': 'bullish' if normalized_momentum > 0 else 'bearish'
+            }
+            
+        except Exception as e:
+            logger.warning("Failed to analyze momentum indicators", error=str(e))
+            return {'momentum_score': 0, 'momentum_strength': 'unknown'}
+    
+    def _analyze_user_credibility_distribution(self, posts_data: List[Dict], comments_data: List[Dict]) -> Dict[str, Any]:
+        """Analyze distribution of user credibility for signal reliability"""
+        try:
+            user_credibility_scores = []
+            credibility_weighted_sentiment = 0
+            high_credibility_users = 0
+            total_credibility_weight = 0
+            
+            for item in posts_data + comments_data:
+                username = item.get('author', '')
+                if not username:
+                    continue
+                    
+                credibility = self._get_user_credibility_weight(username)
+                user_credibility_scores.append(credibility)
+                
+                # Weight sentiment by credibility
+                item_sentiment = item.get('sentiment_score', 0)
+                credibility_weighted_sentiment += item_sentiment * credibility
+                total_credibility_weight += credibility
+                
+                if credibility > 0.7:
+                    high_credibility_users += 1
+            
+            if not user_credibility_scores:
+                return {
+                    'avg_credibility': 0.5,
+                    'credibility_weighted_sentiment': 0,
+                    'high_credibility_ratio': 0,
+                    'credibility_variance': 0,
+                    'signal_reliability': 'low'
+                }
+            
+            avg_credibility = np.mean(user_credibility_scores)
+            credibility_variance = np.var(user_credibility_scores)
+            high_credibility_ratio = high_credibility_users / len(user_credibility_scores)
+            
+            # Calculate final credibility-weighted sentiment
+            final_weighted_sentiment = credibility_weighted_sentiment / max(total_credibility_weight, 1)
+            
+            # Determine signal reliability
+            if avg_credibility > 0.7 and high_credibility_ratio > 0.3:
+                reliability = 'very_high'
+            elif avg_credibility > 0.6 and high_credibility_ratio > 0.2:
+                reliability = 'high'
+            elif avg_credibility > 0.5:
+                reliability = 'medium'
+            else:
+                reliability = 'low'
+            
+            return {
+                'avg_credibility': avg_credibility,
+                'credibility_weighted_sentiment': final_weighted_sentiment,
+                'high_credibility_ratio': high_credibility_ratio,
+                'credibility_variance': credibility_variance,
+                'signal_reliability': reliability,
+                'total_users_analyzed': len(user_credibility_scores),
+                'high_credibility_users': high_credibility_users
+            }
+            
+        except Exception as e:
+            logger.warning("Failed to analyze credibility distribution", error=str(e))
+            return {'avg_credibility': 0.5, 'signal_reliability': 'unknown'}
+    
+    def generate_trading_alerts(self, symbol: str, analysis_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate high-priority trading alerts based on analysis results"""
+        alerts = []
+        
+        try:
+            # Velocity alerts
+            if self.config.enable_velocity_tracking and 'mention_velocity' in analysis_result:
+                velocity = analysis_result['mention_velocity']
+                if velocity['mentions_per_hour'] > self.config.velocity_alert_threshold:
+                    alerts.append({
+                        'type': 'VELOCITY_SPIKE',
+                        'priority': 'HIGH',
+                        'symbol': symbol,
+                        'message': f"Mention velocity spike: {velocity['mentions_per_hour']:.1f} mentions/hour",
+                        'data': {
+                            'mentions_per_hour': velocity['mentions_per_hour'],
+                            'trend': velocity['velocity_trend'],
+                            'acceleration': velocity['acceleration']
+                        },
+                        'timestamp': datetime.utcnow(),
+                        'confidence': 0.9 if velocity['velocity_trend'] == 'accelerating' else 0.7
+                    })
+            
+            # Momentum alerts
+            if self.config.enable_momentum_analysis and 'momentum_indicators' in analysis_result:
+                momentum = analysis_result['momentum_indicators']
+                if abs(momentum['momentum_score']) > self.config.momentum_alert_threshold:
+                    alerts.append({
+                        'type': 'MOMENTUM_SURGE',
+                        'priority': 'HIGH' if momentum['momentum_strength'] in ['strong', 'very_strong'] else 'MEDIUM',
+                        'symbol': symbol,
+                        'message': f"Strong {momentum['momentum_direction']} momentum detected: {momentum['momentum_strength']}",
+                        'data': {
+                            'momentum_score': momentum['momentum_score'],
+                            'strength': momentum['momentum_strength'],
+                            'direction': momentum['momentum_direction'],
+                            'high_conviction_posts': momentum['high_conviction_posts']
+                        },
+                        'timestamp': datetime.utcnow(),
+                        'confidence': 0.95 if momentum['high_conviction_posts'] > 2 else 0.8
+                    })
+            
+            # High credibility signal alerts
+            if self.config.enable_credibility_weighting and 'credibility_distribution' in analysis_result:
+                credibility = analysis_result['credibility_distribution']
+                if (credibility['signal_reliability'] in ['high', 'very_high'] and 
+                    credibility['avg_credibility'] > self.config.min_credibility_for_signals):
+                    alerts.append({
+                        'type': 'HIGH_CREDIBILITY_SIGNAL',
+                        'priority': 'MEDIUM',
+                        'symbol': symbol,
+                        'message': f"High credibility signal detected: {credibility['signal_reliability']}",
+                        'data': {
+                            'avg_credibility': credibility['avg_credibility'],
+                            'reliability': credibility['signal_reliability'],
+                            'weighted_sentiment': credibility['credibility_weighted_sentiment'],
+                            'high_cred_ratio': credibility['high_credibility_ratio']
+                        },
+                        'timestamp': datetime.utcnow(),
+                        'confidence': credibility['avg_credibility']
+                    })
+            
+            # Emoji surge alerts (meme stock activity)
+            if 'emoji_signals' in analysis_result:
+                emoji = analysis_result['emoji_signals']
+                if emoji['rocket_mentions'] > 10 or emoji['bullish_signals'] > 20:
+                    alerts.append({
+                        'type': 'MEME_STOCK_ACTIVITY',
+                        'priority': 'MEDIUM',
+                        'symbol': symbol,
+                        'message': f"Meme stock activity surge: {emoji['rocket_mentions']} rockets, {emoji['bullish_signals']} bullish signals",
+                        'data': {
+                            'rocket_mentions': emoji['rocket_mentions'],
+                            'bullish_signals': emoji['bullish_signals'],
+                            'net_signal': emoji['net_signal']
+                        },
+                        'timestamp': datetime.utcnow(),
+                        'confidence': 0.7
+                    })
+            
+            # Options flow alerts
+            if 'option_signals' in analysis_result:
+                options = analysis_result['option_signals']
+                if options['total_option_activity'] > 10:
+                    direction = 'bullish' if options['call_put_ratio'] > 1.5 else 'bearish' if options['call_put_ratio'] < 0.7 else 'mixed'
+                    alerts.append({
+                        'type': 'OPTIONS_FLOW_SURGE',
+                        'priority': 'MEDIUM',
+                        'symbol': symbol,
+                        'message': f"Options flow surge: {options['total_option_activity']} mentions, {direction} bias",
+                        'data': {
+                            'call_put_ratio': options['call_put_ratio'],
+                            'total_activity': options['total_option_activity'],
+                            'calls': options['calls_mentions'],
+                            'puts': options['puts_mentions']
+                        },
+                        'timestamp': datetime.utcnow(),
+                        'confidence': 0.8
+                    })
+            
+            # Sort alerts by priority and confidence
+            priority_order = {'HIGH': 3, 'MEDIUM': 2, 'LOW': 1}
+            alerts.sort(key=lambda x: (priority_order.get(x['priority'], 0), x['confidence']), reverse=True)
+            
+            return alerts
+            
+        except Exception as e:
+            logger.warning("Failed to generate trading alerts", error=str(e))
+            return []
+    
+    def get_risk_adjusted_sentiment(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Get risk-adjusted sentiment score for high-stakes trading"""
+        try:
+            base_sentiment = analysis_result.get('sentiment_score', 0)
+            
+            # Risk adjustment factors
+            risk_factors = {
+                'credibility_adjustment': 1.0,
+                'velocity_adjustment': 1.0,
+                'momentum_adjustment': 1.0,
+                'volume_adjustment': 1.0
+            }
+            
+            # Adjust based on credibility
+            if 'credibility_distribution' in analysis_result:
+                credibility = analysis_result['credibility_distribution']
+                if credibility['signal_reliability'] == 'very_high':
+                    risk_factors['credibility_adjustment'] = 1.2
+                elif credibility['signal_reliability'] == 'high':  
+                    risk_factors['credibility_adjustment'] = 1.1
+                elif credibility['signal_reliability'] == 'low':
+                    risk_factors['credibility_adjustment'] = 0.7
+            
+            # Adjust based on mention velocity
+            if 'mention_velocity' in analysis_result:
+                velocity = analysis_result['mention_velocity']
+                if velocity['velocity_trend'] == 'accelerating':
+                    risk_factors['velocity_adjustment'] = 1.15
+                elif velocity['velocity_trend'] == 'decelerating':
+                    risk_factors['velocity_adjustment'] = 0.9
+            
+            # Adjust based on momentum
+            if 'momentum_indicators' in analysis_result:
+                momentum = analysis_result['momentum_indicators']
+                if momentum['momentum_strength'] == 'very_strong':
+                    risk_factors['momentum_adjustment'] = 1.2
+                elif momentum['momentum_strength'] == 'strong':
+                    risk_factors['momentum_adjustment'] = 1.1
+                elif momentum['momentum_strength'] == 'weak':
+                    risk_factors['momentum_adjustment'] = 0.8
+            
+            # Adjust based on engagement volume
+            total_engagement = analysis_result.get('total_engagement', 0)
+            if total_engagement > 10000:
+                risk_factors['volume_adjustment'] = 1.1
+            elif total_engagement < 1000:
+                risk_factors['volume_adjustment'] = 0.9
+            
+            # Calculate final risk-adjusted sentiment
+            combined_adjustment = 1.0
+            for factor in risk_factors.values():
+                combined_adjustment *= factor
+            
+            # Apply bounds to prevent extreme adjustments
+            combined_adjustment = max(0.5, min(2.0, combined_adjustment))
+            
+            risk_adjusted_sentiment = base_sentiment * combined_adjustment
+            risk_adjusted_sentiment = max(-1.0, min(1.0, risk_adjusted_sentiment))  # Clamp to [-1, 1]
+            
+            return {
+                'base_sentiment': base_sentiment,
+                'risk_adjusted_sentiment': risk_adjusted_sentiment,
+                'adjustment_factor': combined_adjustment,
+                'risk_factors': risk_factors,
+                'confidence_level': analysis_result.get('confidence', 0.5) * combined_adjustment
+            }
+            
+        except Exception as e:
+            logger.warning("Failed to calculate risk-adjusted sentiment", error=str(e))
+            return {
+                'base_sentiment': analysis_result.get('sentiment_score', 0),
+                'risk_adjusted_sentiment': analysis_result.get('sentiment_score', 0),
+                'adjustment_factor': 1.0,
+                'confidence_level': 0.5
+            }
+
     def __str__(self) -> str:
         return f"RedditSentimentAnalyzer(subreddits={len(self.config.subreddits)})"
     
