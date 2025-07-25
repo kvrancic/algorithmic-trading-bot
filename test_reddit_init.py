@@ -44,7 +44,7 @@ async def test_reddit_initialization():
         print("  ✅ Reddit analyzer created")
         
         # Initialize connection
-        success = reddit_analyzer.initialize()
+        success = await reddit_analyzer.initialize()
         if success:
             print("  ✅ Reddit API initialized successfully")
             
@@ -55,6 +55,8 @@ async def test_reddit_initialization():
             if posts:
                 print(f"    📝 Sample post: '{posts[0].get('title', 'N/A')[:50]}...'")
             
+            # Close the session properly
+            await reddit_analyzer.close()
             return True
         else:
             print("  ❌ Reddit initialization failed")

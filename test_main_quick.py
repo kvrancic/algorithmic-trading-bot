@@ -53,11 +53,14 @@ async def test_main_components():
             subreddits=config.data_sources.reddit.subreddits
         )
         reddit_analyzer = RedditSentimentAnalyzer(reddit_config)
-        reddit_analyzer.initialize()  # Initialize Reddit API
+        await reddit_analyzer.initialize()  # Initialize Reddit API
         
         # Test the new method we added
         posts = await reddit_analyzer.get_recent_posts('stocks')
         print(f"✅ Reddit analyzer: {len(posts)} recent posts initialized")
+        
+        # Close the session properly
+        await reddit_analyzer.close()
         
     except Exception as e:
         print(f"❌ Reddit test failed: {e}")

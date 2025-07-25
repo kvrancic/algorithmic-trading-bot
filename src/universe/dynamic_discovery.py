@@ -273,8 +273,9 @@ class DynamicSymbolDiscovery:
         self.discovered_symbols: Dict[str, SymbolScore] = {}
         self.current_universe: Set[str] = set()
         
-        # Initialize sentiment analyzers
-        self._init_sentiment_sources()
+        # Initialize sentiment analyzers (will be done async)
+        self.reddit_analyzer = None
+        self.news_aggregator = None
         
         # Discovery tracking
         self.last_discovery_run = datetime.now()
@@ -283,7 +284,11 @@ class DynamicSymbolDiscovery:
         
         logger.info("Dynamic symbol discovery initialized", enabled=self.config.enabled)
     
-    def _init_sentiment_sources(self):
+    async def initialize(self):
+        """Initialize async components like sentiment sources"""
+        await self._init_sentiment_sources()
+    
+    async def _init_sentiment_sources(self):
         """Initialize sentiment data sources"""
         try:
             # Create Reddit config from environment and config manager
@@ -300,7 +305,7 @@ class DynamicSymbolDiscovery:
                 lookback_hours=self.config_manager.get('data_sources.reddit.lookback_hours', 24)
             )
             self.reddit_analyzer = RedditSentimentAnalyzer(reddit_config)
-            self.reddit_analyzer.initialize()  # Initialize Reddit API connection
+            await self.reddit_analyzer.initialize()  # Initialize Reddit API connection
             logger.info("Reddit analyzer initialized successfully")
         except Exception as e:
             logger.warning("Reddit analyzer not available", error=str(e))

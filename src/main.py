@@ -154,7 +154,7 @@ class QuantumSentimentBot:
                 subreddits=self.config.data_sources.reddit.subreddits
             )
             reddit_analyzer = RedditSentimentAnalyzer(reddit_config)
-            reddit_analyzer.initialize()  # Initialize Reddit API connection
+            await reddit_analyzer.initialize()  # Initialize Reddit API connection
             
             # Create News config from environment variables
             from src.sentiment.news_aggregator import NewsConfig
@@ -297,6 +297,7 @@ class QuantumSentimentBot:
         """Initialize dynamic symbol discovery system"""
         try:
             self.dynamic_discovery = DynamicSymbolDiscovery(self.config_manager)
+            await self.dynamic_discovery.initialize()  # Initialize async components
             logger.info("Dynamic symbol discovery initialized", 
                        enabled=self.dynamic_discovery.config.enabled)
         except Exception as e:
