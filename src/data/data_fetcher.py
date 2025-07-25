@@ -7,6 +7,7 @@ including market data, sentiment data, and economic indicators.
 
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
+from dataclasses import dataclass, field
 import asyncio
 import pandas as pd
 import structlog
@@ -14,6 +15,41 @@ import structlog
 from .alpaca_client import AlpacaClient
 
 logger = structlog.get_logger(__name__)
+
+
+@dataclass
+class FetcherConfig:
+    """Configuration for data fetcher"""
+    
+    # Market data sources
+    enable_alpaca: bool = True
+    enable_alpha_vantage: bool = True
+    
+    # Data parameters
+    max_symbols: int = 100
+    default_timeframe: str = "1Day"
+    lookback_days: int = 365
+    
+    # Rate limiting
+    alpaca_rate_limit: int = 200  # requests per minute
+    alpha_vantage_rate_limit: int = 5  # requests per minute
+    
+    # Data quality
+    min_data_points: int = 10
+    max_missing_ratio: float = 0.1
+    
+    # Storage settings
+    cache_data: bool = True
+    save_to_database: bool = True
+    
+    # Update frequencies (in minutes)
+    market_data_update_freq: int = 1
+    sentiment_data_update_freq: int = 5
+    fundamental_data_update_freq: int = 60
+    
+    # Concurrency settings
+    max_workers: int = 4
+    enable_parallel_downloads: bool = True
 
 
 class DataFetcher:
@@ -247,3 +283,65 @@ class DataFetcher:
         # Add other health checks here
         
         return health
+    
+    async def fetch_market_data(self, symbols: List[str], timeframe: str = "1Day", days_back: int = 365) -> Dict[str, pd.DataFrame]:
+        """Fetch market data for symbols"""
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days_back)
+            
+            results = {}
+            for symbol in symbols:
+                try:
+                    data = self.alpaca_client.get_bars(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        start=start_date,
+                        end=end_date,
+                        limit=1000
+                    )
+                    results[symbol] = data
+                except Exception as e:
+                    logger.error("Failed to fetch market data for symbol", symbol=symbol, error=str(e))
+                    results[symbol] = pd.DataFrame()
+            
+            return results
+        except Exception as e:
+            logger.error("Failed to fetch market data", error=str(e))
+            return {symbol: pd.DataFrame() for symbol in symbols}
+    
+    async def fetch_sentiment_data(self, symbols: List[str], sources: Optional[List[str]] = None, hours_back: int = 24) -> Dict[str, Dict[str, Any]]:
+        """Fetch sentiment data for symbols"""
+        try:
+            # This would use sentiment analyzers
+            # For now, return structured data matching what the script expects
+            results = {}
+            for symbol in symbols:
+                results[symbol] = {
+                    'data': [],  # Script expects 'data' field containing list of sentiment records
+                    'sentiment_score': 0.0,
+                    'confidence': 0.0,
+                    'sources': sources or []
+                }
+            return results
+        except Exception as e:
+            logger.error("Failed to fetch sentiment data", error=str(e))
+            return {symbol: {} for symbol in symbols}
+    
+    async def fetch_fundamental_data(self, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Fetch fundamental data for symbols"""
+        try:
+            # This would use fundamental data sources
+            # For now, return empty data for each symbol
+            results = {}
+            for symbol in symbols:
+                results[symbol] = {
+                    'symbol': symbol,
+                    'pe_ratio': None,
+                    'market_cap': None,
+                    'revenue': None
+                }
+            return results
+        except Exception as e:
+            logger.error("Failed to fetch fundamental data", error=str(e))
+            return {symbol: {} for symbol in symbols}

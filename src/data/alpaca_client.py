@@ -141,6 +141,17 @@ class AlpacaClient:
             logger.error("Failed to get latest trade", symbol=symbol, error=str(e))
             raise
     
+    def _normalize_symbol(self, symbol: str) -> str:
+        """
+        Normalize symbol for Alpaca API
+        
+        For crypto symbols, Alpaca uses old symbology format (BTCUSD) not BTC/USD or BTC-USD
+        """
+        # Convert crypto symbols from BTC-USD format to BTCUSD format (old symbology)
+        if '-' in symbol and any(crypto in symbol for crypto in ['BTC', 'ETH', 'LTC', 'BCH', 'DOGE', 'SHIB', 'AVAX', 'MATIC']):
+            return symbol.replace('-', '')  # BTC-USD becomes BTCUSD
+        return symbol
+
     def get_bars(
         self,
         symbol: str,
@@ -163,6 +174,10 @@ class AlpacaClient:
             DataFrame with OHLCV data
         """
         try:
+            # Normalize symbol for Alpaca API (convert BTC-USD to BTC/USD etc.)
+            normalized_symbol = self._normalize_symbol(symbol)
+            logger.debug("Symbol normalized", original=symbol, normalized=normalized_symbol)
+            
             # Map timeframe string to Alpaca TimeFrame
             timeframe_map = {
                 '1Min': TimeFrame.Minute,
@@ -178,18 +193,41 @@ class AlpacaClient:
             if start is None:
                 start = datetime.now() - timedelta(days=30)
             
-            # Format datetime to ISO string for Alpaca API
-            start_str = start.strftime('%Y-%m-%d') if isinstance(start, datetime) else start
-            end_str = end.strftime('%Y-%m-%d') if isinstance(end, datetime) and end else end
+            # For paper trading accounts, omit end parameter to automatically 
+            # default to 15 minutes ago and avoid "subscription does not permit querying recent SIP data" error
+            # Per Alpaca forum: leaving end=None defaults to exactly what we want for paper accounts
+            if end is not None:
+                fifteen_minutes_ago = datetime.now() - timedelta(minutes=15)
+                if isinstance(end, datetime) and end > fifteen_minutes_ago:
+                    logger.debug("Omitting end time to avoid recent data restriction", 
+                               requested_end=end, note="Will default to 15 minutes ago")
+                    end = None
             
-            bars = self.api.get_bars(
-                symbol,
-                tf,
-                start=start_str,
-                end=end_str,
-                limit=limit,
-                adjustment='raw'
-            )
+            # Format datetime for Alpaca API - use RFC3339/ISO8601 format
+            # For daily data, use date format; for intraday, use datetime format
+            is_daily = tf == TimeFrame.Day
+            
+            if is_daily:
+                # Daily timeframes use date format: YYYY-MM-DD
+                start_str = start.strftime('%Y-%m-%d') if isinstance(start, datetime) else start
+                end_str = end.strftime('%Y-%m-%d') if isinstance(end, datetime) and end else None
+            else:
+                # Intraday timeframes use RFC3339 format: YYYY-MM-DDTHH:MM:SSZ
+                start_str = start.strftime('%Y-%m-%dT%H:%M:%SZ') if isinstance(start, datetime) else start
+                end_str = end.strftime('%Y-%m-%dT%H:%M:%SZ') if isinstance(end, datetime) and end else None
+            
+            # Build API parameters - omit end if None to use Alpaca's default (15 minutes ago)
+            api_params = {
+                'start': start_str,
+                'limit': limit,
+                'adjustment': 'raw'
+            }
+            
+            # Only include end parameter if we have a value
+            if end_str is not None:
+                api_params['end'] = end_str
+                
+            bars = self.api.get_bars(normalized_symbol, tf, **api_params)
             
             # Convert to DataFrame
             data = []
