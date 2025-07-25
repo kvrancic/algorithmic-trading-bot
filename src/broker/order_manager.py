@@ -764,7 +764,7 @@ class OrderManager:
                     await callback(order, old_status, new_status)
                 else:
                     callback(order, old_status, new_status)
-            except Exception e:
+            except Exception as e:
                 logger.error("Status callback error",
                            order_id=order.order_id,
                            old_status=old_status.value,

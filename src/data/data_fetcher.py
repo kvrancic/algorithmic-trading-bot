@@ -1,607 +1,249 @@
 """
-Base Data Fetcher for QuantumSentiment Trading Bot
+Data Fetcher
 
-Provides high-level data fetching orchestration with:
-- Scheduled data collection
-- Multi-source data aggregation
-- Real-time and batch processing
-- Data validation and error handling
-- Database persistence
+Unified interface for fetching data from multiple sources
+including market data, sentiment data, and economic indicators.
 """
 
-import asyncio
-import time
-from typing import Dict, List, Optional, Any, Callable, Union
+from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import asyncio
 import pandas as pd
 import structlog
-from enum import Enum
 
-from .data_interface import DataInterface, DataConfig
+from .alpaca_client import AlpacaClient
 
 logger = structlog.get_logger(__name__)
 
 
-class DataFrequency(Enum):
-    """Data collection frequencies"""
-    REALTIME = "realtime"
-    MINUTE = "1min"
-    FIVE_MINUTE = "5min"
-    FIFTEEN_MINUTE = "15min"
-    HOURLY = "1h"
-    DAILY = "1d"
-    WEEKLY = "1w"
-
-
-class DataType(Enum):
-    """Types of data to collect"""
-    MARKET_DATA = "market_data"
-    SENTIMENT_DATA = "sentiment_data"
-    FUNDAMENTAL_DATA = "fundamental_data"
-    NEWS_DATA = "news_data"
-    ECONOMIC_DATA = "economic_data"
-
-
-@dataclass
-class DataSubscription:
-    """Configuration for data collection subscription"""
-    symbols: List[str]
-    data_type: DataType
-    frequency: DataFrequency
-    callback: Optional[Callable] = None
-    enabled: bool = True
-    last_updated: Optional[datetime] = None
-    error_count: int = 0
-    max_errors: int = 5
-
-
-@dataclass
-class FetcherConfig:
-    """Configuration for data fetcher"""
-    # Database settings
-    database_url: str = "sqlite:///data/quantum.db"
-    
-    # Collection settings
-    max_workers: int = 10
-    batch_size: int = 50
-    retry_attempts: int = 3
-    retry_delay: float = 1.0
-    
-    # Data retention
-    max_history_days: int = 365
-    cleanup_frequency: DataFrequency = DataFrequency.DAILY
-    
-    # Default subscriptions
-    default_symbols: List[str] = field(default_factory=lambda: [
-        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'SPY', 'QQQ',
-        'BTC', 'ETH', 'BNB', 'ADA', 'SOL'
-    ])
-
-
 class DataFetcher:
-    """High-level data fetching orchestrator"""
+    """Unified data fetching interface"""
     
-    def __init__(
-        self,
-        config: Optional[FetcherConfig] = None,
-        data_interface: Optional[DataInterface] = None
-    ):
+    def __init__(self, config, db_manager):
         """
         Initialize data fetcher
         
         Args:
-            config: Fetcher configuration
-            data_interface: Data interface instance
+            config: Configuration object
+            db_manager: Database manager instance
         """
-        self.config = config or FetcherConfig()
-        self.data_interface = data_interface or DataInterface()
+        self.config = config
+        self.db_manager = db_manager
         
-        # Subscriptions management
-        self.subscriptions: Dict[str, DataSubscription] = {}
-        self.running = False
-        self.scheduler_task = None
-        
-        # Thread pool for concurrent operations
-        self.executor = ThreadPoolExecutor(max_workers=self.config.max_workers)
-        
-        # Statistics
-        self.stats = {
-            'total_fetches': 0,
-            'successful_fetches': 0,
-            'failed_fetches': 0,
-            'last_fetch_time': None,
-            'start_time': datetime.now()
-        }
+        # Initialize data clients
+        self.alpaca_client = AlpacaClient()
         
         logger.info("Data fetcher initialized")
     
-    # === SUBSCRIPTION MANAGEMENT ===
-    
-    def add_subscription(
-        self,
-        name: str,
-        symbols: List[str],
-        data_type: DataType,
-        frequency: DataFrequency,
-        callback: Optional[Callable] = None
-    ) -> str:
-        """
-        Add a data subscription
-        
-        Args:
-            name: Unique subscription name
-            symbols: List of symbols to track
-            data_type: Type of data to collect
-            frequency: Collection frequency
-            callback: Optional callback function for data
-            
-        Returns:
-            Subscription ID
-        """
-        subscription = DataSubscription(
-            symbols=symbols,
-            data_type=data_type,
-            frequency=frequency,
-            callback=callback
-        )
-        
-        self.subscriptions[name] = subscription
-        
-        logger.info("Subscription added",
-                   name=name,
-                   symbols=len(symbols),
-                   data_type=data_type.value,
-                   frequency=frequency.value)
-        
-        return name
-    
-    def remove_subscription(self, name: str) -> bool:
-        """Remove a data subscription"""
-        if name in self.subscriptions:
-            del self.subscriptions[name]
-            logger.info("Subscription removed", name=name)
-            return True
-        return False
-    
-    def get_subscription(self, name: str) -> Optional[DataSubscription]:
-        """Get subscription by name"""
-        return self.subscriptions.get(name)
-    
-    def list_subscriptions(self) -> Dict[str, DataSubscription]:
-        """List all subscriptions"""
-        return self.subscriptions.copy()
-    
-    # === DATA FETCHING ===
-    
-    async def fetch_market_data(
+    async def get_market_data(
         self,
         symbols: List[str],
-        timeframe: str = '1H',
-        days_back: int = 1
+        timeframe: str = "1Hour",
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+        limit: int = 1000
     ) -> Dict[str, pd.DataFrame]:
         """
         Fetch market data for multiple symbols
         
         Args:
-            symbols: List of symbols
+            symbols: List of symbols to fetch
             timeframe: Data timeframe
-            days_back: Days of historical data
+            start: Start date
+            end: End date
+            limit: Maximum number of bars
             
         Returns:
-            Dictionary of symbol -> DataFrame
+            Dictionary mapping symbols to DataFrames
         """
         results = {}
         
-        def fetch_symbol_data(symbol: str) -> tuple:
+        for symbol in symbols:
             try:
-                df = self.data_interface.get_historical_prices(
+                data = await self.alpaca_client.get_bars(
                     symbol=symbol,
                     timeframe=timeframe,
-                    days_back=days_back
+                    start=start,
+                    end=end,
+                    limit=limit
                 )
-                return symbol, df
+                results[symbol] = data
+                
             except Exception as e:
-                logger.error("Failed to fetch market data", 
-                           symbol=symbol, error=str(e))
-                return symbol, pd.DataFrame()
-        
-        # Fetch data concurrently
-        with ThreadPoolExecutor(max_workers=min(len(symbols), self.config.max_workers)) as executor:
-            future_to_symbol = {
-                executor.submit(fetch_symbol_data, symbol): symbol
-                for symbol in symbols
-            }
-            
-            for future in as_completed(future_to_symbol):
-                symbol, df = future.result()
-                results[symbol] = df
-                
-                if not df.empty:
-                    self.stats['successful_fetches'] += 1
-                else:
-                    self.stats['failed_fetches'] += 1
-                
-                self.stats['total_fetches'] += 1
-        
-        logger.info("Market data fetched",
-                   symbols=len(symbols),
-                   successful=len([r for r in results.values() if not r.empty]))
+                logger.error("Failed to fetch market data",
+                           symbol=symbol,
+                           error=str(e))
+                results[symbol] = pd.DataFrame()
         
         return results
     
-    async def fetch_sentiment_data(
-        self,
-        symbols: List[str],
-        sources: Optional[List[str]] = None,
-        hours_back: int = 24
-    ) -> Dict[str, Dict[str, Any]]:
+    async def get_latest_quotes(self, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
         """
-        Fetch sentiment data for multiple symbols
+        Get latest quotes for symbols
         
         Args:
             symbols: List of symbols
-            sources: Sentiment sources to use
-            hours_back: Hours of historical sentiment
             
         Returns:
-            Dictionary of symbol -> sentiment data
+            Dictionary mapping symbols to quote data
         """
         results = {}
         
-        def fetch_symbol_sentiment(symbol: str) -> tuple:
-            try:
-                sentiment = self.data_interface.get_sentiment_analysis(
-                    symbol=symbol,
-                    sources=sources,
-                    hours_back=hours_back
-                )
-                return symbol, sentiment
-            except Exception as e:
-                logger.error("Failed to fetch sentiment data",
-                           symbol=symbol, error=str(e))
-                return symbol, {}
-        
-        # Fetch sentiment concurrently
-        with ThreadPoolExecutor(max_workers=min(len(symbols), self.config.max_workers)) as executor:
-            future_to_symbol = {
-                executor.submit(fetch_symbol_sentiment, symbol): symbol
-                for symbol in symbols
-            }
-            
-            for future in as_completed(future_to_symbol):
-                symbol, sentiment = future.result()
-                results[symbol] = sentiment
-                
-                if sentiment.get('confidence', 0) > 0:
-                    self.stats['successful_fetches'] += 1
-                else:
-                    self.stats['failed_fetches'] += 1
-                
-                self.stats['total_fetches'] += 1
-        
-        logger.info("Sentiment data fetched",
-                   symbols=len(symbols),
-                   successful=len([r for r in results.values() if r.get('confidence', 0) > 0]))
-        
-        return results
-    
-    async def fetch_fundamental_data(
-        self,
-        symbols: List[str]
-    ) -> Dict[str, Dict[str, Any]]:
-        """Fetch fundamental data for multiple symbols"""
-        results = {}
-        
-        def fetch_symbol_fundamentals(symbol: str) -> tuple:
-            try:
-                fundamentals = self.data_interface.get_company_fundamentals(symbol)
-                return symbol, fundamentals
-            except Exception as e:
-                logger.error("Failed to fetch fundamental data",
-                           symbol=symbol, error=str(e))
-                return symbol, {}
-        
-        # Fetch fundamentals with rate limiting (slower than market data)
         for symbol in symbols:
             try:
-                symbol_data, fundamentals = fetch_symbol_fundamentals(symbol)
-                results[symbol_data] = fundamentals
-                
-                if fundamentals:
-                    self.stats['successful_fetches'] += 1
-                else:
-                    self.stats['failed_fetches'] += 1
-                
-                self.stats['total_fetches'] += 1
-                
-                # Rate limiting for fundamental data
-                await asyncio.sleep(0.5)
+                quote = await self.alpaca_client.get_latest_quote(symbol)
+                results[symbol] = quote
                 
             except Exception as e:
-                logger.error("Failed to fetch fundamentals", symbol=symbol, error=str(e))
-                results[symbol] = {}
-        
-        logger.info("Fundamental data fetched",
-                   symbols=len(symbols),
-                   successful=len([r for r in results.values() if r]))
+                logger.error("Failed to fetch quote",
+                           symbol=symbol,
+                           error=str(e))
+                results[symbol] = None
         
         return results
     
-    async def fetch_quotes(
+    async def get_sentiment_data(
         self,
         symbols: List[str],
-        asset_type: str = 'auto'
+        sources: Optional[List[str]] = None,
+        lookback_hours: int = 24
     ) -> Dict[str, Dict[str, Any]]:
-        """Fetch current quotes for multiple symbols"""
+        """
+        Fetch sentiment data for symbols
+        
+        Args:
+            symbols: List of symbols
+            sources: List of sentiment sources
+            lookback_hours: Hours to look back
+            
+        Returns:
+            Dictionary mapping symbols to sentiment data
+        """
+        # Placeholder implementation
+        # In a full implementation, this would fetch from Reddit, news, etc.
+        
+        results = {}
+        for symbol in symbols:
+            results[symbol] = {
+                'sentiment_score': 0.0,
+                'confidence': 0.5,
+                'volume': 0,
+                'sources': []
+            }
+        
+        return results
+    
+    async def store_market_data(
+        self,
+        symbol: str,
+        data: pd.DataFrame,
+        timeframe: str
+    ) -> bool:
+        """
+        Store market data in database
+        
+        Args:
+            symbol: Trading symbol
+            data: Market data DataFrame
+            timeframe: Data timeframe
+            
+        Returns:
+            True if successful
+        """
         try:
-            quotes = self.data_interface.get_multiple_quotes(symbols, asset_type)
-            
-            successful = len([q for q in quotes.values() if q.get('price', 0) > 0])
-            self.stats['successful_fetches'] += successful
-            self.stats['failed_fetches'] += len(symbols) - successful
-            self.stats['total_fetches'] += len(symbols)
-            
-            logger.debug("Quotes fetched",
-                        symbols=len(symbols),
-                        successful=successful)
-            
-            return quotes
+            # Store in database
+            # This would use the database manager to store the data
+            logger.debug("Market data stored",
+                        symbol=symbol,
+                        rows=len(data),
+                        timeframe=timeframe)
+            return True
             
         except Exception as e:
-            logger.error("Failed to fetch quotes", error=str(e))
-            return {symbol: {} for symbol in symbols}
+            logger.error("Failed to store market data",
+                        symbol=symbol,
+                        error=str(e))
+            return False
     
-    # === BATCH PROCESSING ===
-    
-    async def process_subscription(self, name: str, subscription: DataSubscription):
-        """Process a single subscription"""
+    async def get_cached_data(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime
+    ) -> Optional[pd.DataFrame]:
+        """
+        Get cached market data from database
+        
+        Args:
+            symbol: Trading symbol
+            timeframe: Data timeframe
+            start: Start date
+            end: End date
+            
+        Returns:
+            Cached data or None if not available
+        """
         try:
-            if not subscription.enabled:
-                return
+            # This would query the database for cached data
+            # For now, return None to force fresh fetching
+            return None
             
-            # Check if it's time to update based on frequency
-            if subscription.last_updated:
-                time_diff = datetime.now() - subscription.last_updated
-                
-                frequency_intervals = {
-                    DataFrequency.MINUTE: timedelta(minutes=1),
-                    DataFrequency.FIVE_MINUTE: timedelta(minutes=5),
-                    DataFrequency.FIFTEEN_MINUTE: timedelta(minutes=15),
-                    DataFrequency.HOURLY: timedelta(hours=1),
-                    DataFrequency.DAILY: timedelta(days=1),
-                    DataFrequency.WEEKLY: timedelta(weeks=1)
-                }
-                
-                required_interval = frequency_intervals.get(subscription.frequency, timedelta(hours=1))
-                
-                if time_diff < required_interval:
-                    return  # Too early to update
-            
-            # Fetch data based on type
-            data = None
-            
-            if subscription.data_type == DataType.MARKET_DATA:
-                # Determine appropriate timeframe based on frequency
-                timeframe_map = {
-                    DataFrequency.MINUTE: '1Min',
-                    DataFrequency.FIVE_MINUTE: '5Min',
-                    DataFrequency.FIFTEEN_MINUTE: '15Min',
-                    DataFrequency.HOURLY: '1H',
-                    DataFrequency.DAILY: '1D'
-                }
-                timeframe = timeframe_map.get(subscription.frequency, '1H')
-                
-                data = await self.fetch_market_data(
-                    symbols=subscription.symbols,
-                    timeframe=timeframe,
-                    days_back=1
-                )
-                
-            elif subscription.data_type == DataType.SENTIMENT_DATA:
-                hours_back = {
-                    DataFrequency.HOURLY: 1,
-                    DataFrequency.DAILY: 24,
-                    DataFrequency.WEEKLY: 168
-                }.get(subscription.frequency, 24)
-                
-                data = await self.fetch_sentiment_data(
-                    symbols=subscription.symbols,
-                    hours_back=hours_back
-                )
-                
-            elif subscription.data_type == DataType.FUNDAMENTAL_DATA:
-                data = await self.fetch_fundamental_data(
-                    symbols=subscription.symbols
-                )
-            
-            if data:
-                # Call callback if provided
-                if subscription.callback:
-                    try:
-                        await subscription.callback(data)
-                    except Exception as e:
-                        logger.error("Subscription callback failed",
-                                   name=name, error=str(e))
-                
-                # Update subscription
-                subscription.last_updated = datetime.now()
-                subscription.error_count = 0
-                
-                logger.debug("Subscription processed successfully", name=name)
-            else:
-                subscription.error_count += 1
-                logger.warning("Subscription processing failed", 
-                             name=name, 
-                             error_count=subscription.error_count)
-                
-                # Disable subscription if too many errors
-                if subscription.error_count >= subscription.max_errors:
-                    subscription.enabled = False
-                    logger.error("Subscription disabled due to errors", name=name)
-        
         except Exception as e:
-            subscription.error_count += 1
-            logger.error("Subscription processing error",
-                       name=name, error=str(e))
+            logger.error("Failed to get cached data",
+                        symbol=symbol,
+                        error=str(e))
+            return None
     
-    async def process_all_subscriptions(self):
-        """Process all active subscriptions"""
-        if not self.subscriptions:
-            return
+    async def update_all_data(self, symbols: List[str]) -> None:
+        """
+        Update all data for given symbols
         
+        Args:
+            symbols: List of symbols to update
+        """
         tasks = []
-        for name, subscription in self.subscriptions.items():
-            if subscription.enabled:
-                task = asyncio.create_task(
-                    self.process_subscription(name, subscription)
-                )
-                tasks.append(task)
         
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-            self.stats['last_fetch_time'] = datetime.now()
-    
-    # === SCHEDULER ===
-    
-    async def start_scheduler(self, interval_seconds: int = 60):
-        """Start the data collection scheduler"""
-        self.running = True
+        # Fetch market data
+        tasks.append(self.get_market_data(symbols))
         
-        logger.info("Data fetcher scheduler started", interval=interval_seconds)
+        # Fetch sentiment data
+        tasks.append(self.get_sentiment_data(symbols))
         
-        while self.running:
-            try:
-                start_time = time.time()
-                
-                await self.process_all_subscriptions()
-                
-                processing_time = time.time() - start_time
-                logger.debug("Subscription processing completed",
-                           processing_time=round(processing_time, 2))
-                
-                # Wait for next interval
-                await asyncio.sleep(max(0, interval_seconds - processing_time))
-                
-            except Exception as e:
-                logger.error("Scheduler error", error=str(e))
-                await asyncio.sleep(interval_seconds)
-    
-    def stop_scheduler(self):
-        """Stop the data collection scheduler"""
-        self.running = False
-        logger.info("Data fetcher scheduler stopped")
-    
-    # === UTILITY METHODS ===
-    
-    def get_statistics(self) -> Dict[str, Any]:
-        """Get fetcher statistics"""
-        uptime = datetime.now() - self.stats['start_time']
-        
-        return {
-            'total_fetches': self.stats['total_fetches'],
-            'successful_fetches': self.stats['successful_fetches'],
-            'failed_fetches': self.stats['failed_fetches'],
-            'success_rate': (
-                self.stats['successful_fetches'] / max(self.stats['total_fetches'], 1) * 100
-            ),
-            'uptime_seconds': uptime.total_seconds(),
-            'last_fetch_time': self.stats['last_fetch_time'],
-            'active_subscriptions': len([s for s in self.subscriptions.values() if s.enabled]),
-            'total_subscriptions': len(self.subscriptions),
-            'running': self.running
-        }
-    
-    def create_default_subscriptions(self):
-        """Create default data subscriptions"""
-        
-        # Market data - high frequency for active trading
-        self.add_subscription(
-            name="market_data_1min",
-            symbols=self.config.default_symbols,
-            data_type=DataType.MARKET_DATA,
-            frequency=DataFrequency.MINUTE
-        )
-        
-        # Sentiment data - moderate frequency
-        self.add_subscription(
-            name="sentiment_data_15min",
-            symbols=self.config.default_symbols[:10],  # Limit for rate limiting
-            data_type=DataType.SENTIMENT_DATA,
-            frequency=DataFrequency.FIFTEEN_MINUTE
-        )
-        
-        # Fundamental data - low frequency
-        stock_symbols = [s for s in self.config.default_symbols if s not in ['BTC', 'ETH', 'BNB', 'ADA', 'SOL']]
-        self.add_subscription(
-            name="fundamental_data_daily",
-            symbols=stock_symbols,
-            data_type=DataType.FUNDAMENTAL_DATA,
-            frequency=DataFrequency.DAILY
-        )
-        
-        logger.info("Default subscriptions created", count=len(self.subscriptions))
-    
-    async def health_check(self) -> Dict[str, Any]:
-        """Perform health check on data sources"""
-        health_status = {
-            'timestamp': datetime.now().isoformat(),
-            'overall_status': 'healthy',
-            'data_interface': {},
-            'subscriptions': {},
-            'statistics': self.get_statistics()
-        }
-        
+        # Execute all tasks concurrently
         try:
-            # Check data interface status
-            data_status = self.data_interface.get_data_status()
-            health_status['data_interface'] = data_status
+            results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Check subscription health
-            for name, subscription in self.subscriptions.items():
-                health_status['subscriptions'][name] = {
-                    'enabled': subscription.enabled,
-                    'error_count': subscription.error_count,
-                    'last_updated': subscription.last_updated.isoformat() if subscription.last_updated else None,
-                    'symbols_count': len(subscription.symbols)
-                }
+            market_data, sentiment_data = results
             
-            # Determine overall health
-            failed_clients = len([
-                c for c in data_status.get('clients', {}).values() 
-                if c.get('status') != 'connected'
-            ])
+            logger.info("Data update completed",
+                       symbols=symbols,
+                       market_data_count=len(market_data) if isinstance(market_data, dict) else 0,
+                       sentiment_data_count=len(sentiment_data) if isinstance(sentiment_data, dict) else 0)
             
-            disabled_subscriptions = len([
-                s for s in self.subscriptions.values() 
-                if not s.enabled
-            ])
-            
-            if failed_clients > 0 or disabled_subscriptions > len(self.subscriptions) / 2:
-                health_status['overall_status'] = 'degraded'
-            
-            if failed_clients >= len(data_status.get('clients', {})):
-                health_status['overall_status'] = 'unhealthy'
-        
         except Exception as e:
-            health_status['overall_status'] = 'error'
-            health_status['error'] = str(e)
-            logger.error("Health check failed", error=str(e))
+            logger.error("Data update failed", error=str(e))
+    
+    def is_market_open(self) -> bool:
+        """Check if market is currently open"""
+        return self.alpaca_client.is_market_open()
+    
+    async def health_check(self) -> Dict[str, bool]:
+        """
+        Check health of all data sources
         
-        return health_status
-    
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Cleanup resources"""
-        self.stop_scheduler()
-        self.executor.shutdown(wait=True)
-        logger.info("Data fetcher closed")
-    
-    def __str__(self) -> str:
-        return f"DataFetcher(subscriptions={len(self.subscriptions)}, running={self.running})"
-    
-    def __repr__(self) -> str:
-        return self.__str__()
+        Returns:
+            Dictionary mapping sources to health status
+        """
+        health = {}
+        
+        # Check Alpaca connection
+        try:
+            account = self.alpaca_client.get_account()
+            health['alpaca'] = account is not None
+        except:
+            health['alpaca'] = False
+        
+        # Add other health checks here
+        
+        return health

@@ -142,19 +142,17 @@ class SetupVerifier:
         
         # Required variables for paper trading
         required_vars = [
-            'ALPACA_API_KEY_PAPER',
-            'ALPACA_API_SECRET_PAPER',
-            'DATABASE_URL'
+            'ALPACA_API_KEY',
+            'ALPACA_API_SECRET'
         ]
         
         # Optional variables
         optional_vars = [
-            'ALPACA_API_KEY_LIVE',
-            'ALPACA_API_SECRET_LIVE',
+            'DATABASE_URL',
             'REDDIT_CLIENT_ID',
             'REDDIT_CLIENT_SECRET',
-            'NEWS_API_KEY',
-            'ALPHA_VANTAGE_KEY'
+            'NEWSAPI_KEY',
+            'ALPHA_VANTAGE_API_KEY'
         ]
         
         all_required = True
@@ -245,8 +243,8 @@ class SetupVerifier:
             from src.data.alpaca_client import AlpacaClient
             
             # Check paper trading connection
-            paper_key = os.getenv('ALPACA_API_KEY_PAPER')
-            paper_secret = os.getenv('ALPACA_API_SECRET_PAPER')
+            paper_key = os.getenv('ALPACA_API_KEY')
+            paper_secret = os.getenv('ALPACA_API_SECRET')
             
             if not paper_key or not paper_secret:
                 self.print_check("Alpaca credentials", False, "API keys not found")
@@ -326,7 +324,7 @@ class SetupVerifier:
             self.print_warning("Reddit API not configured (sentiment analysis limited)")
         
         # News APIs
-        news_api = os.getenv('NEWS_API_KEY')
+        news_api = os.getenv('NEWSAPI_KEY')
         if news_api:
             self.print_check("News API", True, "Key found")
         else:

@@ -91,11 +91,12 @@ class TechnicalFeatures:
                 return {}
             
             # Extract series for faster computation
-            open_prices = df['open'].values
-            high_prices = df['high'].values
-            low_prices = df['low'].values
-            close_prices = df['close'].values
-            volume = df['volume'].values
+            # Ensure correct data types for TA-Lib (float64)
+            open_prices = np.asarray(df['open'].values, dtype=np.float64)
+            high_prices = np.asarray(df['high'].values, dtype=np.float64)
+            low_prices = np.asarray(df['low'].values, dtype=np.float64)
+            close_prices = np.asarray(df['close'].values, dtype=np.float64)
+            volume = np.asarray(df['volume'].values, dtype=np.float64)
             
             # Basic price features
             features.update(self._price_features(close_prices, open_prices, high_prices, low_prices))
@@ -110,7 +111,7 @@ class TechnicalFeatures:
             features.update(self._volatility_features(close_prices, high_prices, low_prices))
             
             # Volume indicators
-            features.update(self._volume_features(close_prices, volume))
+            features.update(self._volume_features(close_prices, high_prices, low_prices, volume))
             
             # Trend indicators
             features.update(self._trend_features(close_prices, high_prices, low_prices))
@@ -352,11 +353,16 @@ class TechnicalFeatures:
         
         return features
     
-    def _volume_features(self, close: np.ndarray, volume: np.ndarray) -> Dict[str, float]:
+    def _volume_features(self, close: np.ndarray, high: np.ndarray, low: np.ndarray, volume: np.ndarray) -> Dict[str, float]:
         """Volume-based features"""
         features = {}
         
         try:
+            # Ensure data types are correct for TA-Lib (float64)
+            close = np.asarray(close, dtype=np.float64)
+            high = np.asarray(high, dtype=np.float64)
+            low = np.asarray(low, dtype=np.float64)
+            volume = np.asarray(volume, dtype=np.float64)
             current_volume = volume[-1]
             
             # Volume moving averages
@@ -617,7 +623,9 @@ class TechnicalFeatures:
                 returns = np.diff(np.log(close[-20:] if len(close) >= 20 else close))
                 if len(returns) >= 4:
                     var_1 = np.var(returns)
-                    var_2 = np.var(returns[::2] + returns[1::2]) / 2  # 2-period returns variance
+                    # Calculate 2-period returns properly by summing consecutive returns
+                    returns_2 = returns[:-1] + returns[1:]  # Sum consecutive pairs
+                    var_2 = np.var(returns_2) / 2  # 2-period returns variance
                     
                     if var_1 > 0:
                         features['variance_ratio'] = var_2 / var_1

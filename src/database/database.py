@@ -74,6 +74,28 @@ class DatabaseManager:
                    db_type=self.db_type,
                    url=self.database_url.split('@')[-1] if '@' in self.database_url else self.database_url)
     
+    async def initialize(self):
+        """
+        Initialize database - create tables and test connection
+        
+        Returns:
+            True if initialization successful
+        """
+        try:
+            # Test connection first
+            if not self.test_connection():
+                raise RuntimeError("Database connection test failed")
+            
+            # Create tables
+            self.create_tables()
+            
+            logger.info("Database initialization completed successfully")
+            return True
+            
+        except Exception as e:
+            logger.error("Database initialization failed", error=str(e))
+            raise
+    
     def create_tables(self):
         """Create all database tables"""
         try:
@@ -664,6 +686,15 @@ class DatabaseManager:
         except Exception as e:
             logger.error("Database connection test failed", error=str(e))
             return False
+    
+    async def close(self):
+        """Close database connections"""
+        try:
+            if hasattr(self, 'engine'):
+                self.engine.dispose()
+            logger.info("Database connections closed")
+        except Exception as e:
+            logger.error("Error closing database connections", error=str(e))
     
     def __enter__(self):
         return self

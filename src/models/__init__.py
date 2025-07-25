@@ -21,8 +21,16 @@ from .base import (
 from .lstm import PriceLSTM, PriceLSTMConfig
 from .cnn import ChartPatternCNN, ChartPatternConfig
 from .xgboost import MarketRegimeXGBoost, MarketRegimeConfig
-from .transformers import FinBERT, FinBERTConfig
 from .ensemble import StackedEnsemble, StackedEnsembleConfig
+
+# Optional transformer import
+try:
+    from .transformers import FinBERT, FinBERTConfig
+    _has_transformers = True
+except ImportError:
+    FinBERT = None
+    FinBERTConfig = None
+    _has_transformers = False
 
 __all__ = [
     # Base classes
@@ -35,6 +43,9 @@ __all__ = [
     'PriceLSTM', 'PriceLSTMConfig',
     'ChartPatternCNN', 'ChartPatternConfig',
     'MarketRegimeXGBoost', 'MarketRegimeConfig',
-    'FinBERT', 'FinBERTConfig',
     'StackedEnsemble', 'StackedEnsembleConfig'
 ]
+
+# Add transformer models if available
+if _has_transformers:
+    __all__.extend(['FinBERT', 'FinBERTConfig'])

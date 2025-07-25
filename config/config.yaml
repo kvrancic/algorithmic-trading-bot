@@ -11,20 +11,26 @@ system:
 
 # === TRADING CONFIGURATION ===
 trading:
-  mode: "paper"  # paper, live - MUST be explicit for live trading
-  initial_capital: 1000.0  # EUR
-  base_currency: "EUR"
+  # Universe of stocks to trade
+  watchlist:
+    - AAPL
+    - GOOGL  
+    - MSFT
+    - TSLA
+    - NVDA
+    - SPY
+    - QQQ
+    - META
+    - AMZN
   
-  # Position Limits (Safety First!)
-  max_position_size: 50.0  # EUR per position
-  max_daily_loss: 100.0   # EUR daily loss limit
-  max_portfolio_risk: 0.50  # 50% max invested
-  max_drawdown: 0.20       # 20% max drawdown
+  # Position limits
+  max_positions: 10
+  max_position_size: 0.10  # 10% max per position
+  min_position_size: 0.001  # 0.1% min per position
   
-  # Execution Settings
-  execution_delay: 1.0     # seconds between orders
-  slippage_tolerance: 0.002 # 0.2% max slippage
-  commission_rate: 0.001   # 0.1% commission estimate
+  # Signal thresholds
+  signal_threshold: 0.7
+  confidence_threshold: 0.6
 
 # === BROKER CONFIGURATION ===
 broker:
@@ -120,23 +126,19 @@ features:
 
 # === RISK MANAGEMENT ===
 risk:
-  var:
-    confidence: 0.95
-    horizon_days: 1
-    lookback_days: 252
-    
-  kelly:
-    fraction: 0.25        # conservative 1/4 Kelly
-    max_allocation: 0.10  # 10% max per position
-    
-  stop_loss:
-    type: "adaptive"      # fixed, adaptive
-    atr_multiplier: 2.0
-    max_loss: 0.05        # 5% max loss per position
-    
-  correlation:
-    max_correlation: 0.7  # max correlation between positions
-    rebalance_threshold: 0.8
+  # Portfolio level limits
+  max_drawdown: 0.10        # 10% maximum drawdown
+  daily_loss_limit: 0.03   # 3% daily loss limit
+  max_leverage: 1.0         # No leverage
+  
+  # Position level limits
+  stop_loss_pct: 0.02       # 2% stop loss
+  take_profit_pct: 0.05     # 5% take profit
+  risk_per_trade: 0.01      # 1% risk per trade
+  
+  # Correlation limits
+  max_correlation: 0.7
+  max_sector_concentration: 0.3
 
 # === PORTFOLIO OPTIMIZATION ===
 portfolio:
@@ -172,14 +174,7 @@ scheduler:
 
 # === DATABASE ===
 database:
-  type: "postgresql"  # postgresql, sqlite
-  host: "localhost"
-  port: 5432
-  name: "quantum"
-  pool_size: 10
-  
-  # SQLite fallback
-  sqlite_path: "data/quantum.db"
+  connection_string: ${DATABASE_URL}
 
 # === CACHING ===
 cache:

@@ -16,6 +16,9 @@ from .risk_parity import RiskParityOptimizer, RiskParityConfig
 from .rebalancer import DynamicRebalancer, RebalancingConfig
 from .regime_allocator import RegimeSpecificAllocator, RegimeConfig
 
+# Alias for backward compatibility  
+RegimeAwareAllocator = RegimeSpecificAllocator
+
 __all__ = [
     'BlackLittermanOptimizer',
     'BlackLittermanConfig',
@@ -26,5 +29,6 @@ __all__ = [
     'DynamicRebalancer',
     'RebalancingConfig',
     'RegimeSpecificAllocator',
-    'RegimeConfig'
+    'RegimeConfig',
+    'RegimeAwareAllocator'  # Alias
 ]

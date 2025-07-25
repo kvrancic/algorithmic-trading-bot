@@ -19,6 +19,7 @@ import structlog
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
+from scipy import stats
 
 from .technical import TechnicalFeatures
 from .sentiment import SentimentFeatures

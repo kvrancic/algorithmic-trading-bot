@@ -13,6 +13,113 @@ symbols:
   - "ETH-USD" # Ethereum
   - "SPY"     # S&P 500 ETF
   - "QQQ"     # NASDAQ ETF
+  
+  #- "META"    # Meta Platforms Inc.
+  #- "NFLX"    # Netflix Inc.
+  #- "AMD"     # Advanced Micro Devices
+  #- "INTC"    # Intel Corp.
+  #- "BABA"    # Alibaba Group
+  #- "ORCL"    # Oracle Corp.
+  #- "CRM"     # Salesforce Inc.
+  #- "PYPL"    # PayPal Holdings
+  #- "ADBE"    # Adobe Inc.
+  #- "CSCO"    # Cisco Systems
+  #- "PEP"     # PepsiCo Inc.
+  #- "KO"      # Coca-Cola Co.
+  #- "DIS"     # Walt Disney Co.
+  #- "V"       # Visa Inc.
+  #- "MA"      # Mastercard Inc.
+  #- "JPM"     # JPMorgan Chase & Co.
+  #- "BAC"     # Bank of America
+  #- "WMT"     # Walmart Inc.
+  #- "HD"      # Home Depot
+  #- "COST"    # Costco Wholesale
+  #- "MCD"     # McDonald's Corp.
+  #- "SBUX"    # Starbucks Corp.
+  #- "T"       # AT&T Inc.
+  #- "VZ"      # Verizon Communications
+  #- "UNH"     # UnitedHealth Group
+  #- "PFE"     # Pfizer Inc.
+  #- "MRK"     # Merck & Co.
+  #- "ABBV"    # AbbVie Inc.
+  #- "CVX"     # Chevron Corp.
+  #- "XOM"     # Exxon Mobil Corp.
+  #- "BA"      # Boeing Co.
+  #- "GE"      # General Electric
+  #- "CAT"     # Caterpillar Inc.
+  #- "GM"      # General Motors
+  #- "F"       # Ford Motor Co.
+  #- "HON"     # Honeywell International
+  #- "MMM"     # 3M Company
+  #- "NKE"     # Nike Inc.
+  #- "LMT"     # Lockheed Martin
+  #- "GS"      # Goldman Sachs
+  #- "MS"      # Morgan Stanley
+  #- "BLK"     # BlackRock Inc.
+  #- "SCHW"    # Charles Schwab
+  #- "TMO"     # Thermo Fisher Scientific
+  #- "ABT"     # Abbott Laboratories
+  #- "MDT"     # Medtronic plc
+  #- "ISRG"    # Intuitive Surgical
+  #- "NOW"     # ServiceNow Inc.
+  #- "SNOW"    # Snowflake Inc.
+  #- "PLTR"    # Palantir Technologies
+  #- "UBER"    # Uber Technologies
+  #- "LYFT"    # Lyft Inc.
+  #- "SHOP"    # Shopify Inc.
+  #- "SQ"      # Block Inc. (Square)
+  #- "ROKU"    # Roku Inc.
+  #- "ZM"      # Zoom Video Communications
+  #- "DOCU"    # DocuSign Inc.
+  #- "TWLO"    # Twilio Inc.
+  #- "DDOG"    # Datadog Inc.
+  #- "CRWD"    # CrowdStrike Holdings
+  #- "OKTA"    # Okta Inc.
+  #- "ZS"      # Zscaler Inc.
+  #- "NET"     # Cloudflare Inc.
+  #- "TEAM"    # Atlassian Corp.
+  #- "ASML"    # ASML Holding
+  #- "SAP"     # SAP SE
+  #- "SONY"    # Sony Group Corp.
+  #- "TM"      # Toyota Motor Corp.
+  #- "HMC"     # Honda Motor Co.
+  #- "NSANY"   # Nissan Motor Co.
+  #- "VWAGY"   # Volkswagen AG
+  #- "DDAIF"   # Mercedes-Benz Group
+  #- "RACE"    # Ferrari NV
+  #- "TSM"     # Taiwan Semiconductor
+  #- "BIDU"    # Baidu Inc.
+  #- "JD"      # JD.com Inc.
+  #- "NTES"    # NetEase Inc.
+  #- "PDD"     # Pinduoduo Inc.
+  #- "QCOM"    # Qualcomm Inc.
+  #- "AVGO"    # Broadcom Inc.
+  #- "TXN"     # Texas Instruments
+  #- "MU"      # Micron Technology
+  #- "WDAY"    # Workday Inc.
+  #- "CLX"     # Clorox Co.
+  #- "PG"      # Procter & Gamble
+  #- "JNJ"     # Johnson & Johnson
+  #- "GILD"    # Gilead Sciences
+  #- "AMGN"    # Amgen Inc.
+  #- "REGN"    # Regeneron Pharmaceuticals
+  #- "VRTX"    # Vertex Pharmaceuticals
+  #- "SNY"     # Sanofi
+  #- "AZN"     # AstraZeneca
+  #- "BP"      # BP plc
+  #- "TOT"     # TotalEnergies SE
+  #- "ENB"     # Enbridge Inc.
+  #- "SU"      # Suncor Energy
+  #- "RIO"     # Rio Tinto Group
+  #- "BHP"     # BHP Group
+  #- "FCX"     # Freeport-McMoRan
+  #- "GLD"     # SPDR Gold Trust
+  #- "SLV"     # iShares Silver Trust
+  #- "ARKK"    # ARK Innovation ETF
+  #- "IWM"     # Russell 2000 ETF
+  #- "DIA"     # Dow Jones ETF
+  #- "EEM"     # Emerging Markets ETF
+  #- "VTI"     # Vanguard Total Stock Market ETF
 
 # Number of days of historical data to download
 days: 365

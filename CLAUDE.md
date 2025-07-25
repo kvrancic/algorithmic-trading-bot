@@ -32,3 +32,14 @@
 - **ML**: torch, transformers, xgboost, scikit-learn  
 - **Risk**: quantlib, scipy, pandas
 - **Data**: postgresql, redis, sqlalchemy
+
+## System Launch Checklist
+- [ ] Check if the whole pipeline is working together correctly
+- [ ] Draft detailed guide showing pipeline integration and module correlations
+- [ ] Build extensive guide on system startup and usage
+- [ ] Ensure system initializes and runs automatically
+- [ ] Implement two trading modes:
+  1. Full auto-trading
+  2. Trade proposals for user approval
+- [ ] Set up real-time trade monitoring and tracking
+- **🎯 MILESTONE**: System capable of starting trading

@@ -78,9 +78,17 @@ class SentimentFeatures:
             features = {}
             
             # Filter data for this symbol and recent time period
-            symbol_data = sentiment_data[
-                sentiment_data.get('symbol', pd.Series()).str.upper() == symbol.upper()
-            ].copy()
+            if 'symbol' in sentiment_data.columns:
+                # Use query method which is more robust for filtering
+                try:
+                    symbol_data = sentiment_data.query(f"symbol.str.upper() == '{symbol.upper()}'").copy()
+                except Exception:
+                    # Fallback to loc-based filtering
+                    mask = sentiment_data['symbol'].str.upper() == symbol.upper()
+                    symbol_data = sentiment_data.loc[mask].copy()
+            else:
+                # No symbol column, assume all data is for this symbol
+                symbol_data = sentiment_data.copy()
             
             if symbol_data.empty:
                 logger.debug("No sentiment data for symbol", symbol=symbol)
