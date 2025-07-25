@@ -65,7 +65,7 @@ trading:
 # === BROKER CONFIGURATION ===
 broker:
   name: "alpaca"
-  paper_url: "https://paper-api.alpaca.markets"
+  paper_url: "https://paper-api.alpaca.markets/v2"
   live_url: "https://api.alpaca.markets"  # Only used if trading.mode = "live"
   timeout: 30  # seconds
 

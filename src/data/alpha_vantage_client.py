@@ -15,6 +15,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 import structlog
 import requests
+
+logger = structlog.get_logger(__name__)
+
 try:
     from alpha_vantage.timeseries import TimeSeries
     from alpha_vantage.fundamentaldata import FundamentalData

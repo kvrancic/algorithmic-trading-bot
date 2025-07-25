@@ -39,6 +39,7 @@ class DatabaseManager:
             'DATABASE_URL', 
             'sqlite:///data/quantum.db'
         )
+        self.connection_string = self.database_url  # Add connection_string attribute
         
         # Configure engine based on database type
         if self.database_url.startswith('sqlite'):
@@ -76,7 +77,16 @@ class DatabaseManager:
     
     async def initialize(self):
         """
-        Initialize database - create tables and test connection
+        Initialize database - create tables and test connection (async version)
+        
+        Returns:
+            True if initialization successful
+        """
+        return self.initialize_sync()
+    
+    def initialize_sync(self):
+        """
+        Initialize database - create tables and test connection (sync version)
         
         Returns:
             True if initialization successful
@@ -688,7 +698,11 @@ class DatabaseManager:
             return False
     
     async def close(self):
-        """Close database connections"""
+        """Close database connections (async version)"""
+        self.close_sync()
+    
+    def close_sync(self):
+        """Close database connections (sync version)"""
         try:
             if hasattr(self, 'engine'):
                 self.engine.dispose()

@@ -692,6 +692,87 @@ class RedditSentimentAnalyzer:
         except Exception:
             return 0.3  # Default for unknown users
     
+    async def get_recent_posts(
+        self, 
+        subreddit: str, 
+        limit: int = 100, 
+        since: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent posts from a subreddit
+        
+        Args:
+            subreddit: Name of subreddit
+            limit: Maximum number of posts to retrieve
+            since: Only get posts after this time
+            
+        Returns:
+            List of post dictionaries
+        """
+        if not self.reddit:
+            logger.warning("Reddit not initialized")
+            return []
+        
+        try:
+            posts = []
+            subreddit_obj = self.reddit.subreddit(subreddit)
+            
+            # Get recent posts (hot and new)
+            for submission in subreddit_obj.hot(limit=limit//2):
+                # Skip if too old
+                if since and datetime.fromtimestamp(submission.created_utc) < since:
+                    continue
+                    
+                posts.append({
+                    'id': submission.id,
+                    'title': submission.title,
+                    'text': submission.selftext,
+                    'score': submission.score,
+                    'created_utc': submission.created_utc,
+                    'author': str(submission.author) if submission.author else 'deleted',
+                    'num_comments': submission.num_comments,
+                    'url': submission.url,
+                    'subreddit': subreddit,
+                    'flair': submission.link_flair_text or ''
+                })
+            
+            # Also get new posts
+            for submission in subreddit_obj.new(limit=limit//2):
+                # Skip if too old
+                if since and datetime.fromtimestamp(submission.created_utc) < since:
+                    continue
+                    
+                posts.append({
+                    'id': submission.id,
+                    'title': submission.title,
+                    'text': submission.selftext,
+                    'score': submission.score,
+                    'created_utc': submission.created_utc,
+                    'author': str(submission.author) if submission.author else 'deleted',
+                    'num_comments': submission.num_comments,
+                    'url': submission.url,
+                    'subreddit': subreddit,
+                    'flair': submission.link_flair_text or ''
+                })
+            
+            # Remove duplicates and sort by creation time
+            seen_ids = set()
+            unique_posts = []
+            for post in posts:
+                if post['id'] not in seen_ids:
+                    seen_ids.add(post['id'])
+                    unique_posts.append(post)
+            
+            # Sort by newest first
+            unique_posts.sort(key=lambda x: x['created_utc'], reverse=True)
+            
+            logger.debug(f"Retrieved {len(unique_posts)} posts from r/{subreddit}")
+            return unique_posts[:limit]
+            
+        except Exception as e:
+            logger.error(f"Failed to get recent posts from r/{subreddit}", error=str(e))
+            return []
+
     def get_trending_symbols(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get trending symbols across all monitored subreddits"""
         try:

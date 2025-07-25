@@ -32,7 +32,8 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import all components
-from src.config import Config
+sys.path.insert(0, str(Path(__file__).parent))
+from configuration import Config
 from src.config.config_manager import ConfigManager
 from src.database import DatabaseManager
 from src.data import AlpacaClient, DataFetcher
@@ -153,6 +154,7 @@ class QuantumSentimentBot:
                 subreddits=self.config.data_sources.reddit.subreddits
             )
             reddit_analyzer = RedditSentimentAnalyzer(reddit_config)
+            reddit_analyzer.initialize()  # Initialize Reddit API connection
             
             # Create News config from environment variables
             from src.sentiment.news_aggregator import NewsConfig
@@ -161,6 +163,7 @@ class QuantumSentimentBot:
                 newsapi_key=os.getenv('NEWSAPI_KEY', '')
             )
             news_aggregator = NewsAggregator(news_config)
+            news_aggregator.initialize()  # Initialize News aggregator
             
             # Create a simple sentiment analyzer wrapper for now
             class SimpleSentimentAnalyzer:
@@ -203,7 +206,9 @@ class QuantumSentimentBot:
             
             # 6. Initialize portfolio optimizer
             logger.info("Initializing portfolio optimizer...")
-            self.portfolio_optimizer = RegimeAwareAllocator(self.config)
+            from src.portfolio.regime_allocator import RegimeConfig
+            regime_config = RegimeConfig()
+            self.portfolio_optimizer = RegimeAwareAllocator(regime_config)
             
             # 7. Initialize risk engine
             logger.info("Initializing risk engine...")
@@ -239,6 +244,8 @@ class QuantumSentimentBot:
             
         except Exception as e:
             logger.error("System initialization failed", error=str(e))
+            import traceback
+            traceback.print_exc()
             return False
     
     async def _initialize_broker(self) -> None:
@@ -487,11 +494,20 @@ class QuantumSentimentBot:
                     sentiment_df = None
                 
                 # 3. Generate features
-                features = self.feature_pipeline.generate_features(
+                feature_result = self.feature_pipeline.generate_features(
                     symbol=symbol,
                     market_data=bars,
                     sentiment_data=sentiment_df
                 )
+                
+                # Extract features dictionary and convert to DataFrame for compatibility
+                features_dict = feature_result.get('features', {})
+                if not features_dict:
+                    continue
+                    
+                # Convert features dict to DataFrame with single row
+                import pandas as pd
+                features = pd.DataFrame([features_dict])
                 
                 # 4. Get ensemble prediction
                 try:
@@ -691,7 +707,7 @@ class QuantumSentimentBot:
         
         # Check position limits
         current_positions = len([p for p in self.position_tracker.get_all_positions() if not p.is_flat])
-        if current_positions >= self.config.risk.max_positions:
+        if current_positions >= self.config.trading.max_positions:
             return False
         
         # Check concentration limits
@@ -849,9 +865,10 @@ class QuantumSentimentBot:
         
         # Log strategy-specific settings
         signal_requirements = self.config.trading.signal_requirements
-        if strategy_mode in signal_requirements:
-            strategy_config = signal_requirements[strategy_mode]
-            logger.info(f"Strategy '{strategy_mode}' configuration", **strategy_config.to_dict() if hasattr(strategy_config, 'to_dict') else strategy_config)
+        if hasattr(signal_requirements, strategy_mode):
+            strategy_config = getattr(signal_requirements, strategy_mode)
+            config_dict = strategy_config.to_dict() if hasattr(strategy_config, 'to_dict') else (strategy_config.__dict__ if hasattr(strategy_config, '__dict__') else {})
+            logger.info(f"Strategy '{strategy_mode}' configuration", **config_dict)
     
     def _extract_technical_indicators(self, features: pd.DataFrame) -> Dict[str, Any]:
         """Extract technical indicators from features for strategy validation"""

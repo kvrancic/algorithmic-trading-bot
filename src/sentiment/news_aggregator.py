@@ -677,6 +677,113 @@ class NewsAggregator:
         # Articles from 12 hours ago get ~37% weight
         return np.exp(-hours_ago / 12)
     
+    async def get_recent_articles(
+        self,
+        since: Optional[datetime] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent articles from all configured sources
+        
+        Args:
+            since: Only get articles after this time
+            limit: Maximum number of articles to retrieve
+            
+        Returns:
+            List of article dictionaries
+        """
+        if since is None:
+            since = datetime.now() - timedelta(hours=self.config.lookback_hours)
+            
+        all_articles = []
+        
+        try:
+            # Get from RSS feeds
+            for feed_url in self.config.rss_feeds:
+                try:
+                    feed = feedparser.parse(feed_url)
+                    for entry in feed.entries[:self.config.max_articles_per_source//len(self.config.rss_feeds)]:
+                        # Parse publication date
+                        pub_date = None
+                        if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                            pub_date = datetime(*entry.published_parsed[:6])
+                        elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                            pub_date = datetime(*entry.updated_parsed[:6])
+                        
+                        # Skip if too old
+                        if pub_date and pub_date < since:
+                            continue
+                            
+                        article = {
+                            'title': entry.get('title', ''),
+                            'description': entry.get('summary', ''),
+                            'url': entry.get('link', ''),
+                            'published_at': pub_date,
+                            'source': feed.feed.get('title', feed_url),
+                            'type': 'rss'
+                        }
+                        all_articles.append(article)
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to fetch RSS feed {feed_url}", error=str(e))
+                    continue
+            
+            # Get from NewsAPI if configured
+            if self.config.newsapi_key:
+                try:
+                    url = "https://newsapi.org/v2/everything"
+                    params = {
+                        'apiKey': self.config.newsapi_key,
+                        'q': 'stocks OR trading OR market OR finance',
+                        'language': self.config.language,
+                        'sortBy': 'publishedAt',
+                        'pageSize': self.config.max_articles_per_source,
+                        'from': since.isoformat()
+                    }
+                    
+                    response = requests.get(url, params=params, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        for article_data in data.get('articles', []):
+                            # Parse publication date
+                            pub_date = None
+                            if article_data.get('publishedAt'):
+                                try:
+                                    pub_date = datetime.fromisoformat(
+                                        article_data['publishedAt'].replace('Z', '+00:00')
+                                    )
+                                except:
+                                    pass
+                            
+                            article = {
+                                'title': article_data.get('title', ''),
+                                'description': article_data.get('description', ''),
+                                'url': article_data.get('url', ''),
+                                'published_at': pub_date,
+                                'source': article_data.get('source', {}).get('name', 'NewsAPI'),
+                                'type': 'newsapi'
+                            }
+                            all_articles.append(article)
+                            
+                except Exception as e:
+                    logger.warning("Failed to fetch NewsAPI articles", error=str(e))
+            
+            # Deduplicate and sort
+            unique_articles = self._deduplicate_articles(all_articles)
+            
+            # Sort by publication date (newest first)
+            unique_articles.sort(
+                key=lambda x: x.get('published_at', datetime.min), 
+                reverse=True
+            )
+            
+            logger.debug(f"Retrieved {len(unique_articles)} recent articles")
+            return unique_articles[:limit]
+            
+        except Exception as e:
+            logger.error("Failed to get recent articles", error=str(e))
+            return []
+
     def get_trending_news(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get trending financial news across all sources"""
         try:

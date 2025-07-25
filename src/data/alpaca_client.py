@@ -55,8 +55,7 @@ class AlpacaClient:
         self.api = REST(
             self.api_key,
             self.api_secret, 
-            self.base_url,
-            api_version='v2'
+            self.base_url
         )
         
         self.paper_trading = paper

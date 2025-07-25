@@ -5,8 +5,19 @@ This module provides data fetching and processing capabilities
 for various market data sources including stocks, crypto, and sentiment data.
 """
 
-from .alpaca_client import AlpacaClient
-from .data_fetcher import DataFetcher
+try:
+    from .alpaca_client import AlpacaClient
+    _has_alpaca = True
+except ImportError:
+    AlpacaClient = None
+    _has_alpaca = False
+
+try:
+    from .data_fetcher import DataFetcher
+    _has_data_fetcher = True
+except ImportError:
+    DataFetcher = None
+    _has_data_fetcher = False
 
 try:
     from .reddit_client import RedditClient
@@ -20,12 +31,13 @@ except ImportError:
     CryptoClient = None
     DataInterface = None
 
-__all__ = [
-    'AlpacaClient',
-    'DataFetcher'
-]
+__all__ = []
 
-# Add optional components if available
+# Add components if available
+if _has_alpaca:
+    __all__.append('AlpacaClient')
+if _has_data_fetcher:
+    __all__.append('DataFetcher')
 if RedditClient:
     __all__.append('RedditClient')
 if AlphaVantageClient:

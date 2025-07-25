@@ -135,8 +135,16 @@ class SymbolExtractor:
             re.compile(r'\$([A-Z]{1,5})\b', re.IGNORECASE),
             # SYMBOL: or SYMBOL - format
             re.compile(r'\b([A-Z]{2,5})(?:\s*[:|-])', re.IGNORECASE),
+            # Parentheses format like (MSFT) or Company (SYMBOL)
+            re.compile(r'\(([A-Z]{2,5})\)', re.IGNORECASE),
+            # Symbol after "and" or "&" like "$GME and AMC"
+            re.compile(r'(?:and|&)\s+([A-Z]{2,5})\b', re.IGNORECASE),
+            # Multiple symbols separated by comma like "AAPL, TSLA, NVDA"
+            re.compile(r',\s*([A-Z]{2,5})\b', re.IGNORECASE),
             # Standalone symbols (more conservative)
-            re.compile(r'\b([A-Z]{2,5})\b(?=\s+(?:stock|shares|calls|puts|options|up|down|moon|rocket))', re.IGNORECASE),
+            re.compile(r'\b([A-Z]{2,5})\b(?=\s+(?:stock|shares|calls|puts|options|up|down|moon|rocket|beats|earnings|price|target))', re.IGNORECASE),
+            # Symbol at start of sentence
+            re.compile(r'(?:^|\.\s+)([A-Z]{2,5})\b(?=\s+(?:is|has|will|to|going|stock|shares))', re.IGNORECASE),
         ]
         
         # Common false positives to filter out
@@ -240,9 +248,21 @@ class DynamicSymbolDiscovery:
     
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        self.config = DiscoveryConfig.from_dict(
-            config_manager.config.universe.get('dynamic_discovery', {})
-        )
+        
+        # Get dynamic discovery config and convert to dict if needed
+        universe_config = config_manager.config.universe
+        if hasattr(universe_config, 'dynamic_discovery'):
+            dd_config = universe_config.dynamic_discovery
+            if hasattr(dd_config, 'to_dict'):
+                dd_config = dd_config.to_dict()
+            elif hasattr(dd_config, '__dict__'):
+                dd_config = dd_config.__dict__
+            else:
+                dd_config = {}
+        else:
+            dd_config = {}
+        
+        self.config = DiscoveryConfig.from_dict(dd_config)
         
         # Initialize components
         self.symbol_extractor = SymbolExtractor()
@@ -266,13 +286,40 @@ class DynamicSymbolDiscovery:
     def _init_sentiment_sources(self):
         """Initialize sentiment data sources"""
         try:
-            self.reddit_analyzer = RedditSentimentAnalyzer(self.config_manager)
+            # Create Reddit config from environment and config manager
+            from ..sentiment.reddit_analyzer import RedditConfig
+            import os
+            
+            reddit_config = RedditConfig(
+                client_id=os.getenv('REDDIT_CLIENT_ID', ''),
+                client_secret=os.getenv('REDDIT_CLIENT_SECRET', ''),
+                user_agent=os.getenv('REDDIT_USER_AGENT', 'QuantumSentiment/1.0'),
+                subreddits=self.config_manager.get('data_sources.reddit.subreddits', ['wallstreetbets', 'stocks', 'investing']),
+                max_posts_per_subreddit=self.config_manager.get('data_sources.reddit.max_posts', 100),
+                min_post_score=self.config_manager.get('data_sources.reddit.min_score', 10),
+                lookback_hours=self.config_manager.get('data_sources.reddit.lookback_hours', 24)
+            )
+            self.reddit_analyzer = RedditSentimentAnalyzer(reddit_config)
+            self.reddit_analyzer.initialize()  # Initialize Reddit API connection
+            logger.info("Reddit analyzer initialized successfully")
         except Exception as e:
             logger.warning("Reddit analyzer not available", error=str(e))
             self.reddit_analyzer = None
         
         try:
-            self.news_aggregator = NewsAggregator(self.config_manager)
+            # Create News config from environment and config manager
+            from ..sentiment.news_aggregator import NewsConfig
+            import os
+            
+            news_config = NewsConfig(
+                alpha_vantage_key=os.getenv('ALPHA_VANTAGE_API_KEY', ''),
+                newsapi_key=os.getenv('NEWSAPI_KEY', ''),
+                news_sources=['alpha_vantage', 'newsapi'],  # Use available news sources
+                max_articles_per_source=50,
+                lookback_hours=24
+            )
+            self.news_aggregator = NewsAggregator(news_config)
+            logger.info("News aggregator initialized successfully")
         except Exception as e:
             logger.warning("News aggregator not available", error=str(e))
             self.news_aggregator = None
