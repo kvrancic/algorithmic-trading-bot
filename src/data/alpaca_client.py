@@ -145,9 +145,9 @@ class AlpacaClient:
         """
         Normalize symbol for Alpaca API
         
-        For crypto symbols, Alpaca uses old symbology format (BTCUSD) not BTC/USD or BTC-USD
+        For crypto symbols, Alpaca bars API uses format without separators (BTCUSD) not BTC-USD or BTC/USD
         """
-        # Convert crypto symbols from BTC-USD format to BTCUSD format (old symbology)
+        # Convert crypto symbols from BTC-USD format to BTCUSD format (remove dash for bars API)
         if '-' in symbol and any(crypto in symbol for crypto in ['BTC', 'ETH', 'LTC', 'BCH', 'DOGE', 'SHIB', 'AVAX', 'MATIC']):
             return symbol.replace('-', '')  # BTC-USD becomes BTCUSD
         return symbol
@@ -174,9 +174,15 @@ class AlpacaClient:
             DataFrame with OHLCV data
         """
         try:
-            # Normalize symbol for Alpaca API (convert BTC-USD to BTC/USD etc.)
+            # Normalize symbol for Alpaca API (convert BTC-USD to BTCUSD etc.)
             normalized_symbol = self._normalize_symbol(symbol)
-            logger.debug("Symbol normalized", original=symbol, normalized=normalized_symbol)
+            
+            # No URL encoding needed since crypto symbols no longer use / separator
+            api_symbol = normalized_symbol
+                
+            logger.debug("Symbol normalized", 
+                        original=symbol, 
+                        normalized=normalized_symbol)
             
             # Map timeframe string to Alpaca TimeFrame
             timeframe_map = {
@@ -227,7 +233,7 @@ class AlpacaClient:
             if end_str is not None:
                 api_params['end'] = end_str
                 
-            bars = self.api.get_bars(normalized_symbol, tf, **api_params)
+            bars = self.api.get_bars(api_symbol, tf, **api_params)
             
             # Convert to DataFrame
             data = []

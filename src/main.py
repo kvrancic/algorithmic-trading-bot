@@ -323,7 +323,19 @@ class QuantumSentimentBot:
             model_files = persistence.registry.list_models()
             if model_files:
                 logger.info("Found saved models", count=len(model_files))
-                # Load models here
+                # Try to load models and add to ensemble
+                for model_name, versions in model_files.items():
+                    try:
+                        # Load latest version of each model
+                        model, metadata = persistence.load_model(model_name)
+                        ensemble.add_base_model(model_name, model)
+                        logger.info("Model loaded successfully", 
+                                   model_name=model_name, 
+                                   version=metadata.version)
+                    except Exception as e:
+                        logger.warning("Failed to load model", 
+                                     model_name=model_name, 
+                                     error=str(e))
             else:
                 logger.warning("No saved models found, using untrained ensemble")
         else:
