@@ -31,6 +31,36 @@ trading:
   # Signal thresholds
   signal_threshold: 0.7
   confidence_threshold: 0.6
+  
+  # Trading strategy mode
+  strategy_mode: "adaptive"  # adaptive, technical_only, sentiment_only, conservative
+  
+  # Signal source requirements for different modes
+  signal_requirements:
+    # Adaptive mode (recommended) - uses whatever signals are available
+    adaptive:
+      use_available_signals: true    # Use any available signals
+      confidence_boost_both: 0.1     # Extra confidence when both technical & sentiment agree
+      min_signal_strength: 0.6       # Minimum signal strength to trade
+    
+    # Technical analysis only mode
+    technical_only:
+      enabled: false                 # Enable this mode
+      required_indicators: ["rsi", "macd", "bollinger"]  # Required technical indicators
+      min_confluence: 2              # How many indicators must agree
+    
+    # Sentiment analysis only mode  
+    sentiment_only:
+      enabled: false                 # Enable this mode
+      required_sources: ["reddit", "news"]  # Required sentiment sources
+      min_sentiment_score: 0.7       # Strong sentiment required
+    
+    # Conservative mode (both technical and sentiment required)
+    conservative:
+      enabled: false                 # Enable this mode
+      require_technical_confirmation: true   # Must have technical signal
+      require_sentiment_confirmation: true   # Must have sentiment signal
+      higher_confidence_threshold: 0.8       # Higher confidence needed
 
 # === BROKER CONFIGURATION ===
 broker:
@@ -161,6 +191,29 @@ universe:
     min_market_cap: 1e9    # $1B minimum
     min_volume: 1e6        # $1M daily volume
     max_spread: 0.01       # 1% max bid-ask spread
+  
+  # Dynamic symbol discovery settings
+  dynamic_discovery:
+    enabled: true                    # Enable automatic symbol discovery
+    sentiment_threshold: 100         # Minimum mentions needed to consider
+    trending_window_hours: 24        # Look for symbols trending in last N hours
+    max_new_symbols_daily: 5         # Maximum new symbols to add per day
+    confidence_threshold: 0.7        # Minimum confidence to add symbol
+    discovery_interval_minutes: 30   # How often to run discovery
+    
+    # Source weights for scoring discovered symbols
+    source_weights:
+      reddit: 0.4          # Reddit mentions weight
+      news: 0.3            # News mentions weight  
+      twitter: 0.2         # Twitter mentions weight
+      unusual_whales: 0.1  # Options flow weight
+    
+    # Scoring parameters
+    mention_normalizer: 100     # Normalize mention counts
+    sentiment_weight: 0.3       # Weight of sentiment in final score
+    trending_weight: 0.2        # Weight of trending/recency in score
+    diversity_weight: 0.1       # Bonus for multiple source mentions
+    confidence_weight: 0.4      # Weight of extraction confidence
 
 # === SCHEDULING ===
 scheduler:

@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import all components
 from src.config import Config
+from src.config.config_manager import ConfigManager
 from src.database import DatabaseManager
 from src.data import AlpacaClient, DataFetcher
 from src.sentiment import SentimentFusion, RedditSentimentAnalyzer, NewsAggregator
@@ -47,6 +48,7 @@ from src.broker import (
     AccountMonitor, AccountMonitorConfig
 )
 from src.training import ModelPersistence
+from src.universe.dynamic_discovery import DynamicSymbolDiscovery
 
 # Configure logging
 structlog.configure(
@@ -93,6 +95,7 @@ class QuantumSentimentBot:
         self.is_running = False
         
         # Core components
+        self.config_manager = ConfigManager(self.config)
         self.db_manager = None
         self.data_fetcher = None
         self.sentiment_analyzer = None
@@ -102,6 +105,7 @@ class QuantumSentimentBot:
         self.risk_engine = None
         self.execution_router = None
         self.broker = None
+        self.dynamic_discovery = None
         
         # Monitoring components
         self.order_manager = None
@@ -218,10 +222,17 @@ class QuantumSentimentBot:
             logger.info("Initializing broker components...")
             await self._initialize_broker()
             
-            # 10. Verify connectivity
+            # 10. Initialize dynamic symbol discovery
+            logger.info("Initializing dynamic symbol discovery...")
+            await self._initialize_dynamic_discovery()
+            
+            # 11. Verify connectivity
             logger.info("Verifying system connectivity...")
             if not await self._verify_connectivity():
                 raise RuntimeError("System connectivity check failed")
+            
+            # 12. Log strategy configuration
+            self._log_strategy_configuration()
             
             logger.info("System initialization completed successfully")
             return True
@@ -274,6 +285,16 @@ class QuantumSentimentBot:
         
         # Sync current state
         await self.broker.full_sync()
+    
+    async def _initialize_dynamic_discovery(self) -> None:
+        """Initialize dynamic symbol discovery system"""
+        try:
+            self.dynamic_discovery = DynamicSymbolDiscovery(self.config_manager)
+            logger.info("Dynamic symbol discovery initialized", 
+                       enabled=self.dynamic_discovery.config.enabled)
+        except Exception as e:
+            logger.warning("Dynamic discovery initialization failed", error=str(e))
+            self.dynamic_discovery = None
     
     async def _load_ensemble_model(self, persistence: ModelPersistence) -> StackedEnsemble:
         """Load the trained ensemble model"""
@@ -435,7 +456,7 @@ class QuantumSentimentBot:
         logger.info("Generating predictions...")
         
         # Get universe of stocks to analyze
-        universe = self._get_trading_universe()
+        universe = await self._get_trading_universe()
         
         for symbol in universe:
             try:
@@ -505,24 +526,26 @@ class QuantumSentimentBot:
                 signal_strength = prediction.get('signal_strength', 0)
                 confidence = prediction.get('confidence', 0)
                 
-                # 5. Create trading signal if strong enough
-                if abs(signal_strength) > 0.7 and confidence > 0.6:
-                    signal = {
-                        'symbol': symbol,
-                        'signal': 'buy' if signal_strength > 0 else 'sell',
-                        'strength': abs(signal_strength),
-                        'confidence': confidence,
-                        'timestamp': datetime.now(),
-                        'features': features.iloc[-1].to_dict()
-                    }
-                    
-                    # Risk check
-                    if await self._validate_signal(signal):
-                        self.pending_signals.append(signal)
-                        logger.info("Signal generated",
-                                   symbol=symbol,
-                                   signal=signal['signal'],
-                                   strength=signal['strength'])
+                # 5. Create trading signal with enhanced data
+                signal = {
+                    'symbol': symbol,
+                    'signal': 'buy' if signal_strength > 0 else 'sell',
+                    'strength': abs(signal_strength),
+                    'confidence': confidence,
+                    'timestamp': datetime.now(),
+                    'features': features.iloc[-1].to_dict(),
+                    'sentiment_data': sentiment_dict,
+                    'technical_indicators': self._extract_technical_indicators(features)
+                }
+                
+                # Validate signal using strategy-specific rules
+                if await self._validate_signal_by_strategy(signal):
+                    self.pending_signals.append(signal)
+                    logger.info("Signal generated",
+                               symbol=symbol,
+                               signal=signal['signal'],
+                               strength=signal['strength'],
+                               strategy_mode=self.config.trading.strategy_mode)
                 
             except Exception as e:
                 logger.error("Failed to generate prediction",
@@ -775,7 +798,7 @@ class QuantumSentimentBot:
                    positions=portfolio_summary.get('active_positions'),
                    total_pnl=portfolio_summary.get('total_pnl'))
     
-    def _get_trading_universe(self) -> List[str]:
+    async def _get_trading_universe(self) -> List[str]:
         """Get list of symbols to analyze"""
         
         # Start with watchlist
@@ -787,9 +810,228 @@ class QuantumSentimentBot:
             if not position.is_flat and position.symbol not in universe:
                 universe.append(position.symbol)
         
-        # Could add trending stocks from sentiment analysis
+        # Add symbols from dynamic discovery if enabled
+        if self.dynamic_discovery and self.dynamic_discovery.config.enabled:
+            try:
+                # Update discovery system with current universe
+                self.dynamic_discovery.update_universe(set(universe))
+                
+                # Run discovery and add new symbols
+                new_symbols = await self.dynamic_discovery.run_discovery()
+                if new_symbols:
+                    logger.info("Adding new symbols from discovery", 
+                               symbols=new_symbols, count=len(new_symbols))
+                    universe.extend(new_symbols)
+                    
+                    # Try to update config universe if possible
+                    try:
+                        current_universe = self.config.get_nested('universe.stocks', [])
+                        updated_universe = list(set(current_universe + new_symbols))
+                        self.config.update('universe', {'stocks': updated_universe})
+                        logger.debug("Updated config universe with new symbols")
+                    except Exception as config_error:
+                        logger.debug("Could not update config universe", error=str(config_error))
+                    
+            except Exception as e:
+                logger.warning("Dynamic discovery failed", error=str(e))
         
-        return universe[:50]  # Limit to 50 symbols
+        return list(set(universe))[:50]  # Remove duplicates and limit to 50 symbols
+    
+    def _log_strategy_configuration(self) -> None:
+        """Log current strategy configuration for visibility"""
+        
+        strategy_mode = self.config.trading.strategy_mode
+        logger.info("Trading strategy configuration",
+                   strategy_mode=strategy_mode,
+                   watchlist_size=len(self.config.trading.watchlist),
+                   max_positions=self.config.trading.max_positions,
+                   dynamic_discovery_enabled=getattr(self.dynamic_discovery.config, 'enabled', False) if self.dynamic_discovery else False)
+        
+        # Log strategy-specific settings
+        signal_requirements = self.config.trading.signal_requirements
+        if strategy_mode in signal_requirements:
+            strategy_config = signal_requirements[strategy_mode]
+            logger.info(f"Strategy '{strategy_mode}' configuration", **strategy_config.to_dict() if hasattr(strategy_config, 'to_dict') else strategy_config)
+    
+    def _extract_technical_indicators(self, features: pd.DataFrame) -> Dict[str, Any]:
+        """Extract technical indicators from features for strategy validation"""
+        if features.empty:
+            return {}
+        
+        latest_features = features.iloc[-1]
+        indicators = {}
+        
+        # Common technical indicators
+        for col in latest_features.index:
+            if any(indicator in col.lower() for indicator in ['rsi', 'macd', 'sma', 'ema', 'bollinger']):
+                indicators[col] = float(latest_features[col]) if pd.notna(latest_features[col]) else 0.0
+        
+        return indicators
+    
+    async def _validate_signal_by_strategy(self, signal: Dict[str, Any]) -> bool:
+        """Validate signal based on configured strategy mode"""
+        
+        strategy_mode = self.config.trading.strategy_mode
+        signal_requirements = self.config.trading.signal_requirements
+        
+        # Get strategy config
+        strategy_config = signal_requirements.get(strategy_mode, {})
+        
+        if strategy_mode == "adaptive":
+            return await self._validate_adaptive_signal(signal, strategy_config)
+        elif strategy_mode == "technical_only":
+            return await self._validate_technical_only_signal(signal, strategy_config)
+        elif strategy_mode == "sentiment_only":
+            return await self._validate_sentiment_only_signal(signal, strategy_config)
+        elif strategy_mode == "conservative":
+            return await self._validate_conservative_signal(signal, strategy_config)
+        else:
+            # Default validation
+            return await self._validate_signal(signal)
+    
+    async def _validate_adaptive_signal(self, signal: Dict[str, Any], config: Dict[str, Any]) -> bool:
+        """Validate signal for adaptive strategy mode"""
+        
+        # Basic validation first
+        if not await self._validate_signal(signal):
+            return False
+        
+        min_signal_strength = config.get('min_signal_strength', 0.6)
+        
+        # Check minimum signal strength
+        if signal['strength'] < min_signal_strength:
+            return False
+        
+        # Boost confidence if both technical and sentiment signals agree
+        if config.get('use_available_signals', True):
+            has_technical = bool(signal.get('technical_indicators'))
+            has_sentiment = bool(signal.get('sentiment_data'))
+            
+            if has_technical and has_sentiment and config.get('confidence_boost_both', 0) > 0:
+                original_confidence = signal['confidence']
+                boosted_confidence = min(1.0, original_confidence + config['confidence_boost_both'])
+                signal['confidence'] = boosted_confidence
+                
+                logger.debug("Confidence boosted for multi-signal agreement",
+                           symbol=signal['symbol'],
+                           original=original_confidence,
+                           boosted=boosted_confidence)
+        
+        return True
+    
+    async def _validate_technical_only_signal(self, signal: Dict[str, Any], config: Dict[str, Any]) -> bool:
+        """Validate signal for technical-only strategy mode"""
+        
+        if not config.get('enabled', False):
+            return False
+        
+        # Basic validation first
+        if not await self._validate_signal(signal):
+            return False
+        
+        # Must have technical indicators
+        technical_indicators = signal.get('technical_indicators', {})
+        if not technical_indicators:
+            logger.debug("Technical-only mode: No technical indicators available",
+                        symbol=signal['symbol'])
+            return False
+        
+        # Check required indicators
+        required_indicators = config.get('required_indicators', [])
+        available_indicators = [name.lower() for name in technical_indicators.keys()]
+        
+        matching_indicators = []
+        for required in required_indicators:
+            if any(required in available for available in available_indicators):
+                matching_indicators.append(required)
+        
+        min_confluence = config.get('min_confluence', 2)
+        if len(matching_indicators) < min_confluence:
+            logger.debug("Technical-only mode: Insufficient indicator confluence",
+                        symbol=signal['symbol'],
+                        required=min_confluence,
+                        available=len(matching_indicators))
+            return False
+        
+        return True
+    
+    async def _validate_sentiment_only_signal(self, signal: Dict[str, Any], config: Dict[str, Any]) -> bool:
+        """Validate signal for sentiment-only strategy mode"""
+        
+        if not config.get('enabled', False):
+            return False
+        
+        # Basic validation first
+        if not await self._validate_signal(signal):
+            return False
+        
+        # Must have sentiment data
+        sentiment_data = signal.get('sentiment_data')
+        if not sentiment_data:
+            logger.debug("Sentiment-only mode: No sentiment data available",
+                        symbol=signal['symbol'])
+            return False
+        
+        # Check minimum sentiment score
+        min_sentiment_score = config.get('min_sentiment_score', 0.7)
+        sentiment_score = abs(sentiment_data.get('sentiment_score', 0))
+        
+        if sentiment_score < min_sentiment_score:
+            logger.debug("Sentiment-only mode: Insufficient sentiment score",
+                        symbol=signal['symbol'],
+                        score=sentiment_score,
+                        required=min_sentiment_score)
+            return False
+        
+        # Check required sources
+        required_sources = config.get('required_sources', [])
+        available_sources = sentiment_data.get('sources', [])
+        
+        if required_sources:
+            matching_sources = [source for source in required_sources if source in available_sources]
+            if not matching_sources:
+                logger.debug("Sentiment-only mode: Required sentiment sources not available",
+                            symbol=signal['symbol'],
+                            required=required_sources,
+                            available=available_sources)
+                return False
+        
+        return True
+    
+    async def _validate_conservative_signal(self, signal: Dict[str, Any], config: Dict[str, Any]) -> bool:
+        """Validate signal for conservative strategy mode"""
+        
+        if not config.get('enabled', False):
+            return False
+        
+        # Basic validation first
+        if not await self._validate_signal(signal):
+            return False
+        
+        # Higher confidence threshold
+        higher_confidence_threshold = config.get('higher_confidence_threshold', 0.8)
+        if signal['confidence'] < higher_confidence_threshold:
+            logger.debug("Conservative mode: Insufficient confidence",
+                        symbol=signal['symbol'],
+                        confidence=signal['confidence'],
+                        required=higher_confidence_threshold)
+            return False
+        
+        # Require both technical and sentiment confirmation
+        require_technical = config.get('require_technical_confirmation', True)
+        require_sentiment = config.get('require_sentiment_confirmation', True)
+        
+        if require_technical and not signal.get('technical_indicators'):
+            logger.debug("Conservative mode: Technical confirmation required but not available",
+                        symbol=signal['symbol'])
+            return False
+        
+        if require_sentiment and not signal.get('sentiment_data'):
+            logger.debug("Conservative mode: Sentiment confirmation required but not available",
+                        symbol=signal['symbol'])
+            return False
+        
+        return True
     
     async def shutdown(self) -> None:
         """Gracefully shutdown the system"""

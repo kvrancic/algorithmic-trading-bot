@@ -264,6 +264,11 @@ class Config:
             'logs': 'logs/',
             'reports': 'reports/'
         }))
+    
+    @property
+    def universe(self) -> ConfigSection:
+        """Universe configuration section"""
+        return self._sections.get('universe', ConfigSection({}))
 
 
 def load_config(config_path: Optional[str] = None) -> Config:
